@@ -1,0 +1,400 @@
+import React, { useState } from 'react';
+import { Plus, Trash2, AlertTriangle, Package, Calendar, Sparkles, Loader2, Info } from 'lucide-react';
+
+export default function App() {
+  const [reportDate, setReportDate] = useState('2026-03-06');
+  
+  // Стан для збереження результатів ШІ-аналізу та статусу завантаження
+  const [aiInsights, setAiInsights] = useState({});
+  const [loadingAi, setLoadingAi] = useState({});
+
+  const [items, setItems] = useState([
+    {
+      id: 1,
+      name: 'Пляшка 0,180 мл Стекло (Китай)',
+      stock: 54709,
+      consumption: 9800,
+      d1Qty: 120000,
+      d1Date: '2026-06-28',
+      d2Qty: 0,
+      d2Date: '2026-06-13',
+      d3Qty: 0,
+      d3Date: '2025-03-30',
+    },
+    {
+      id: 2,
+      name: 'Колпачек пластик Китай',
+      stock: 54293,
+      consumption: 9800,
+      d1Qty: 25000,
+      d1Date: '2026-01-02',
+      d2Qty: 30000,
+      d2Date: '2026-04-15', 
+      d3Qty: 0,
+      d3Date: '', 
+    }
+  ]);
+
+  const handleAddItem = () => {
+    setItems([
+      ...items,
+      {
+        id: Date.now(),
+        name: 'Нова позиція',
+        stock: 0,
+        consumption: 0,
+        d1Qty: 0, d1Date: '',
+        d2Qty: 0, d2Date: '',
+        d3Qty: 0, d3Date: ''
+      }
+    ]);
+  };
+
+  const handleRemoveItem = (id) => {
+    setItems(items.filter(item => item.id !== id));
+    // Очищаємо дані ШІ при видаленні
+    const newInsights = { ...aiInsights };
+    delete newInsights[id];
+    setAiInsights(newInsights);
+  };
+
+  const handleChange = (id, field, value) => {
+    setItems(items.map(item => item.id === id ? { ...item, [field]: value } : item));
+    // Скидаємо попередній аналіз ШІ, якщо дані змінилися
+    if (aiInsights[id]) {
+        const newInsights = { ...aiInsights };
+        delete newInsights[id];
+        setAiInsights(newInsights);
+    }
+  };
+
+  // Головна функція з розрахунку метрик
+  const calculateMetrics = (item) => {
+    const today = new Date(reportDate);
+    const stock = Number(item.stock) || 0;
+    const consumption = Number(item.consumption) || 0;
+    const dailyConsumption = consumption / 30;
+
+    const parseDate = (d) => d ? new Date(d) : null;
+    const d1Date = parseDate(item.d1Date);
+    const d2Date = parseDate(item.d2Date);
+    const d3Date = parseDate(item.d3Date);
+
+    const d1Qty = Number(item.d1Qty) || 0;
+    const d2Qty = Number(item.d2Qty) || 0;
+    const d3Qty = Number(item.d3Qty) || 0;
+
+    const getDays = (targetDate) => {
+      if (!targetDate) return 0;
+      const diffTime = targetDate - today;
+      return Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
+    };
+
+    const days1 = getDays(d1Date);
+    const days2 = getDays(d2Date);
+    const days3 = getDays(d3Date);
+
+    const before1 = item.d1Date ? stock - (days1 * dailyConsumption) : null;
+    const after1 = before1 !== null ? before1 + d1Qty : null;
+
+    let before2 = item.d2Date ? stock - (days2 * dailyConsumption) : null;
+    if (before2 !== null && d1Date && d1Date <= d2Date) {
+      before2 += d1Qty;
+    }
+    const after2 = before2 !== null ? before2 + d2Qty : null;
+
+    let before3 = item.d3Date ? stock - (days3 * dailyConsumption) : null;
+    if (before3 !== null && d1Date && d1Date <= d3Date) before3 += d1Qty;
+    if (before3 !== null && d2Date && d2Date <= d3Date) before3 += d2Qty;
+    const after3 = before3 !== null ? before3 + d3Qty : null;
+
+    const formatSafe = (val) => val !== null ? Math.round(val).toLocaleString('uk-UA') : '-';
+    const covSafe = (val) => val !== null && consumption > 0 ? (val / consumption).toFixed(1) : '-';
+
+    return {
+      currentCoverage: consumption > 0 ? (stock / consumption).toFixed(1) : '0',
+      d1: { before: before1, after: after1, beforeStr: formatSafe(before1), covStr: covSafe(after1) },
+      d2: { before: before2, after: after2, beforeStr: formatSafe(before2), covStr: covSafe(after2) },
+      d3: { before: before3, after: after3, beforeStr: formatSafe(before3), covStr: covSafe(after3) },
+    };
+  };
+
+  // Функція виклику ШІ з експоненційним бекоффом
+  const fetchWithBackoff = async (payload, maxRetries = 5) => {
+    const apiKey = ""; // API ключ інжектиться середовищем
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+    
+    let retries = 0;
+    const delays = [1000, 2000, 4000, 8000, 16000];
+
+    while (retries <= maxRetries) {
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        return data.candidates?.[0]?.content?.parts?.[0]?.text || "Не вдалося згенерувати відповідь.";
+      } catch (error) {
+        if (retries === maxRetries) {
+          throw new Error("Перевищено ліміт спроб підключення до ШІ.");
+        }
+        await new Promise(res => setTimeout(res, delays[retries]));
+        retries++;
+      }
+    }
+  };
+
+  // Обробник натискання кнопки ШІ
+  const handleAiAnalysis = async (item, metrics) => {
+    setLoadingAi(prev => ({ ...prev, [item.id]: true }));
+    
+    const systemPrompt = `Ти - досвідчений експерт з ланцюгів постачання (Supply Chain Manager) та аналітик запасів. 
+    Твоє завдання: коротко, професійно та структуровано проаналізувати ситуацію по конкретній позиції сировини (SKU).
+    Оціни ризики розриву ланцюга (out-of-stock) або надмірного замороження капіталу (overstock).
+    Дай 1-2 конкретні рекомендації. Відповідай українською мовою, використовуй марковані списки для зручності.`;
+
+    const userQuery = `
+    Проаналізуй позицію: "${item.name}"
+    Сьогоднішня дата звіту: ${reportDate}
+    
+    ПОТОЧНИЙ СТАН:
+    - Залишок зараз: ${item.stock} шт.
+    - Швидкість витрати: ${item.consumption} шт/міс.
+    - Поточне покриття (на скільки вистачить без поставок): ${metrics.currentCoverage} міс.
+    
+    ПЛАНОВІ ПОСТАВКИ (вже з урахуванням виправленої хронології):
+    1. Поставка №1: ${item.d1Qty || 0} шт. (Дата: ${item.d1Date || 'Не заплановано'}). Очікуваний залишок перед нею: ${metrics.d1.before !== null ? Math.round(metrics.d1.before) : 'N/A'} шт.
+    2. Поставка №2: ${item.d2Qty || 0} шт. (Дата: ${item.d2Date || 'Не заплановано'}). Очікуваний залишок перед нею: ${metrics.d2.before !== null ? Math.round(metrics.d2.before) : 'N/A'} шт.
+    3. Поставка №3: ${item.d3Qty || 0} шт. (Дата: ${item.d3Date || 'Не заплановано'}). Очікуваний залишок перед нею: ${metrics.d3.before !== null ? Math.round(metrics.d3.before) : 'N/A'} шт.
+    
+    Якщо залишок перед поставкою від'ємний - це означає зупинку лінії.
+    Якщо дата поставки в минулому - вкажи на помилку в даних або затримку логістики.
+    
+    Зроби аналіз.
+    `;
+
+    const payload = {
+      contents: [{ parts: [{ text: userQuery }] }],
+      systemInstruction: { parts: [{ text: systemPrompt }] }
+    };
+
+    try {
+      const resultText = await fetchWithBackoff(payload);
+      setAiInsights(prev => ({ ...prev, [item.id]: resultText }));
+    } catch (error) {
+      setAiInsights(prev => ({ 
+        ...prev, 
+        [item.id]: "⚠️ Помилка з'єднання з ШІ. Будь ласка, спробуйте ще раз пізніше." 
+      }));
+    } finally {
+      setLoadingAi(prev => ({ ...prev, [item.id]: false }));
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50 text-gray-800 p-4 md:p-8 font-sans">
+      <div className="max-w-7xl mx-auto space-y-6">
+        
+        {/* Header */}
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+              <Package className="text-blue-600" />
+              Калькулятор покриття запасів MRP
+            </h1>
+            <p className="text-sm text-gray-500 mt-1 flex items-center gap-1">
+               <Sparkles className="w-4 h-4 text-purple-500" />
+               Інтегровано AI-оцінку Supply Chain
+            </p>
+          </div>
+          <div className="mt-4 md:mt-0 flex items-center gap-3 bg-blue-50 px-4 py-2 rounded-lg border border-blue-100">
+            <Calendar className="text-blue-600 w-5 h-5" />
+            <div className="flex flex-col">
+              <label className="text-xs font-semibold text-blue-800 uppercase">Дата звіту (сьогодні)</label>
+              <input 
+                type="date" 
+                value={reportDate}
+                onChange={(e) => setReportDate(e.target.value)}
+                className="bg-transparent text-sm font-medium outline-none text-blue-900"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Items List */}
+        <div className="space-y-6">
+          {items.map((item) => {
+            const metrics = calculateMetrics(item);
+            const isAnalyzing = loadingAi[item.id];
+            const hasInsight = aiInsights[item.id];
+            
+            return (
+              <div key={item.id} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden transition-all">
+                {/* Card Header - Basic Info */}
+                <div className="bg-slate-50 border-b border-gray-200 p-4 relative">
+                  <div className="flex flex-wrap gap-4 items-end pr-10">
+                    <div className="flex-1 min-w-[200px]">
+                      <label className="block text-xs font-medium text-gray-500 mb-1">SKU / Назва сировини</label>
+                      <input 
+                        type="text" 
+                        value={item.name}
+                        onChange={(e) => handleChange(item.id, 'name', e.target.value)}
+                        className="w-full font-semibold text-gray-900 bg-white border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none"
+                      />
+                    </div>
+                    <div className="w-28">
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Залишок</label>
+                      <input 
+                        type="number" 
+                        value={item.stock}
+                        onChange={(e) => handleChange(item.id, 'stock', e.target.value)}
+                        className="w-full bg-white border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none"
+                      />
+                    </div>
+                    <div className="w-28">
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Витрата/міс</label>
+                      <input 
+                        type="number" 
+                        value={item.consumption}
+                        onChange={(e) => handleChange(item.id, 'consumption', e.target.value)}
+                        className="w-full bg-white border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none"
+                      />
+                    </div>
+                    <div className="w-32 bg-green-50 border border-green-200 rounded-md p-2 flex flex-col justify-center items-center">
+                      <span className="text-xs text-green-700 font-medium">Покриття зараз</span>
+                      <span className="text-lg font-bold text-green-800">{metrics.currentCoverage} міс.</span>
+                    </div>
+
+                    {/* Кнопка виклику ШІ */}
+                    <button
+                      onClick={() => handleAiAnalysis(item, metrics)}
+                      disabled={isAnalyzing}
+                      className="ml-auto flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-lg font-medium shadow-sm transition-all disabled:opacity-70"
+                    >
+                      {isAnalyzing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                      <span className="text-sm">{isAnalyzing ? 'Аналізую...' : 'Аналіз ШІ'}</span>
+                    </button>
+                  </div>
+
+                  <button 
+                    onClick={() => handleRemoveItem(item.id)}
+                    className="absolute top-4 right-4 text-gray-400 hover:text-red-500 transition-colors"
+                    title="Видалити позицію"
+                  >
+                    <Trash2 className="w-5 h-5" />
+                  </button>
+                </div>
+
+                {/* Блок з висновком ШІ */}
+                {hasInsight && (
+                  <div className="bg-indigo-50 border-b border-indigo-100 p-4">
+                    <div className="flex gap-3">
+                      <div className="mt-0.5">
+                        <Info className="w-5 h-5 text-indigo-600" />
+                      </div>
+                      <div className="flex-1">
+                        <h4 className="text-sm font-bold text-indigo-900 mb-2">Оцінка експерта:</h4>
+                        <div className="text-sm text-indigo-800 space-y-2 whitespace-pre-wrap leading-relaxed">
+                          {aiInsights[item.id]}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Deliveries Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-gray-100">
+                  <DeliveryBlock num={1} item={item} metrics={metrics.d1} handleChange={handleChange} />
+                  <DeliveryBlock num={2} item={item} metrics={metrics.d2} handleChange={handleChange} />
+                  <DeliveryBlock num={3} item={item} metrics={metrics.d3} handleChange={handleChange} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <button 
+          onClick={handleAddItem}
+          className="flex items-center gap-2 px-5 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl shadow-sm transition-colors w-full md:w-auto justify-center"
+        >
+          <Plus className="w-5 h-5" />
+          Додати позицію
+        </button>
+
+      </div>
+    </div>
+  );
+}
+
+// Sub-component for each delivery block
+function DeliveryBlock({ num, item, metrics, handleChange }) {
+  const isDeficit = metrics.before !== null && metrics.before < 0;
+  const hasDate = !!item[`d${num}Date`];
+
+  return (
+    <div className="p-4 bg-white relative hover:bg-gray-50/50 transition-colors">
+      <h3 className="text-sm font-bold text-gray-700 mb-4 flex items-center gap-2">
+        <span className="bg-gray-200 text-gray-700 rounded-full w-6 h-6 flex items-center justify-center text-xs">
+          {num}
+        </span>
+        Поставка №{num}
+      </h3>
+      
+      <div className="space-y-3">
+        <div className="flex gap-3">
+          <div className="flex-1">
+            <label className="block text-xs font-medium text-gray-500 mb-1">Дата прибуття</label>
+            <input 
+              type="date" 
+              value={item[`d${num}Date`]}
+              onChange={(e) => handleChange(item.id, `d${num}Date`, e.target.value)}
+              className="w-full text-sm border border-gray-300 rounded-md px-2 py-1.5 focus:ring-1 focus:ring-blue-500 outline-none"
+            />
+          </div>
+          <div className="flex-1">
+            <label className="block text-xs font-medium text-gray-500 mb-1">Кількість (шт)</label>
+            <input 
+              type="number" 
+              value={item[`d${num}Qty`]}
+              onChange={(e) => handleChange(item.id, `d${num}Qty`, e.target.value)}
+              className="w-full text-sm border border-gray-300 rounded-md px-2 py-1.5 focus:ring-1 focus:ring-blue-500 outline-none"
+            />
+          </div>
+        </div>
+
+        {hasDate && (
+          <div className={`mt-4 p-3 rounded-lg border ${isDeficit ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200'}`}>
+            <div className="flex justify-between items-center mb-1">
+              <span className="text-xs text-gray-600">Залишок перед приходом:</span>
+              <span className={`font-bold text-sm flex items-center gap-1 ${isDeficit ? 'text-red-600' : 'text-gray-800'}`}>
+                {isDeficit && <AlertTriangle className="w-3.5 h-3.5" />}
+                {metrics.beforeStr}
+              </span>
+            </div>
+            
+            <div className="flex justify-between items-center mb-1">
+              <span className="text-xs text-gray-600">Залишок після:</span>
+              <span className="font-bold text-sm text-blue-700">
+                {metrics.after !== null ? Math.round(metrics.after).toLocaleString('uk-UA') : '-'}
+              </span>
+            </div>
+            
+            <div className="flex justify-between items-center pt-2 mt-2 border-t border-gray-200/60">
+              <span className="text-xs font-medium text-gray-600">Нове покриття:</span>
+              <span className="font-bold text-sm text-green-700 bg-green-100 px-2 py-0.5 rounded">
+                {metrics.covStr} міс.
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
