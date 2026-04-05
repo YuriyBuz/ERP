@@ -536,48 +536,53 @@
                 let activeKey = settings.apiKey ? settings.apiKey.trim() : "";
                 let textResult = null;
                 let lastError = "Невідома помилка";
+                let usedModel = "gemini-2.5-flash-preview-09-2025";
 
-                // Каскадний перелік моделей: почнемо з найновіших і найшвидших
-                const modelsToTry = activeKey === "" 
-                    ? ["gemini-2.5-flash-preview-09-2025"] 
-                    : [
-                        "gemini-1.5-flash-latest",
-                        "gemini-1.5-flash",
-                        "gemini-1.5-pro",
-                        "gemini-pro"
-                      ];
-
-                const payload = { contents: [{ parts: [{ text: prompt }] }] };
-
-                for (const targetModel of modelsToTry) {
-                    try {
-                        const url = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${activeKey}`;
-                        const response = await fetch(url, { 
-                            method: 'POST', 
-                            headers: { 'Content-Type': 'application/json' }, 
-                            body: JSON.stringify(payload) 
-                        });
+                try {
+                    // Якщо вказано особистий ключ, запитуємо API про доступні моделі
+                    if (activeKey !== "") {
+                        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${activeKey}`);
+                        if (!res.ok) throw new Error("Недійсний API ключ або помилка доступу.");
                         
-                        if (!response.ok) {
-                            const errData = await response.json().catch(() => ({}));
-                            throw new Error(`HTTP ${response.status}: ${errData?.error?.message || ''}`);
-                        }
-                        
-                        const data = await response.json();
-                        if (data.candidates && data.candidates.length > 0) {
-                            textResult = data.candidates[0].content.parts[0].text;
-                            break; 
+                        const data = await res.json();
+                        const availableModels = data.models
+                            .filter(m => m.supportedGenerationMethods?.includes("generateContent") && m.name.includes("gemini"))
+                            .map(m => m.name.replace('models/', ''));
+                            
+                        if (availableModels.length > 0) {
+                            // Обираємо найкращу доступну модель (перевага flash 1.5)
+                            usedModel = availableModels.find(m => m === 'gemini-1.5-flash') || 
+                                        availableModels.find(m => m.includes('flash')) || 
+                                        availableModels[0];
                         } else {
-                            throw new Error("API не повернув тексту.");
-                        }
-                    } catch (e) {
-                        lastError = e.message;
-                        console.warn(`Спроба з моделлю ${targetModel} не вдалася:`, e.message);
-                        if (lastError.includes("API_KEY_INVALID") || lastError.includes("API key not valid")) {
-                            lastError = "Недійсний API ключ. Перевірте правильність ключа в Налаштуваннях.";
-                            break; 
+                            throw new Error("Немає доступних моделей для генерації.");
                         }
                     }
+
+                    const url = `https://generativelanguage.googleapis.com/v1beta/models/${usedModel}:generateContent?key=${activeKey}`;
+                    const payload = { contents: [{ parts: [{ text: prompt }] }] };
+                    
+                    const response = await fetch(url, { 
+                        method: 'POST', 
+                        headers: { 'Content-Type': 'application/json' }, 
+                        body: JSON.stringify(payload) 
+                    });
+                    
+                    if (!response.ok) {
+                        const errData = await response.json().catch(() => ({}));
+                        throw new Error(`HTTP ${response.status}: ${errData?.error?.message || ''}`);
+                    }
+                    
+                    const data = await response.json();
+                    if (data.candidates && data.candidates.length > 0) {
+                        textResult = data.candidates[0].content.parts[0].text;
+                    } else {
+                        throw new Error("API не повернув тексту.");
+                    }
+
+                } catch (e) {
+                    lastError = e.message;
+                    console.error("AI Fetch Error:", e);
                 }
 
                 if (textResult) {
@@ -586,7 +591,7 @@
                     setAiInsights(prev => ({ 
                         ...prev, 
                         [item.id]: { 
-                            text: `⚠️ AI недоступний.\nОстання помилка: ${lastError}\n\nБудь ласка, перевірте свій ключ у Налаштуваннях за допомогою кнопки "Перевірити". Можливо, ключ було заблоковано Google.`, 
+                            text: `⚠️ AI недоступний.\nОстання помилка: ${lastError}\n\nПорада: Якщо ви тестуєте прямо тут у Canvas, просто зітріть свій API ключ у Налаштуваннях (залишіть поле порожнім), щоб використати вбудований безкоштовний ключ системи.`, 
                             sources: [] 
                         } 
                     }));
@@ -801,7 +806,7 @@
                                                         
                                                         <div className="mb-4 flex gap-2 ml-1">
                                                             {/* ВИДІЛЕНА НУМЕРАЦІЯ */}
-                                                            <div className="flex items-center justify-center bg-slate-800 text-white font-black text-sm rounded-lg w-10 h-[38px] mt-5 shrink-0 shadow-md">
+                                                            <div className="flex items-center justify-center bg-slate-200/50 border border-slate-200 text-slate-500 font-black text-sm rounded-lg w-10 h-[38px] mt-5 shrink-0 shadow-sm">
                                                                 {index + 1}
                                                             </div>
                                                             <div className="flex-1 min-w-0">
@@ -912,12 +917,12 @@
             }
 
             return (
-                <div className={`p-4 w-[330px] shrink-0 flex flex-col justify-between relative transition-colors ${isActive ? 'bg-orange-100/80 border-[1.5px] border-orange-400/80 shadow-sm z-10' : 'hover:bg-slate-50'}`}>
+                <div className={`p-4 w-[330px] shrink-0 flex flex-col justify-between relative transition-colors ${isActive ? 'bg-orange-50 border border-orange-200 shadow-sm z-10' : 'hover:bg-slate-50'}`}>
                     
                     <div className="flex justify-between items-center mb-3">
                         <div className="flex items-center gap-2">
-                            <span className={`${isActive ? 'bg-orange-500 text-white' : 'bg-slate-100 text-slate-500 border border-slate-200'} rounded-full w-5 h-5 flex items-center justify-center text-[10px] font-black`}>{num}</span>
-                            <span className={`text-[11px] font-bold uppercase tracking-widest ${isActive ? 'text-orange-700' : 'text-slate-500'}`}>Доставка</span>
+                            <span className={`${isActive ? 'bg-orange-100 text-orange-500 border border-orange-200' : 'bg-slate-100 text-slate-500 border border-slate-200'} rounded-full w-5 h-5 flex items-center justify-center text-[10px] font-black`}>{num}</span>
+                            <span className={`text-[11px] font-bold uppercase tracking-widest ${isActive ? 'text-orange-600/80' : 'text-slate-500'}`}>Доставка</span>
                         </div>
                         <input type="text" value={cont || ''} onChange={e => handleChange(itemId, `d${num}Cont`, e.target.value)} placeholder="Контейнер №" className="w-28 text-[10px] font-bold border border-slate-200 rounded px-2 py-1 focus:ring-1 focus:ring-orange-500 outline-none text-slate-600 shadow-sm" />
                     </div>
@@ -925,7 +930,7 @@
                     <div className="flex gap-1 mb-3 items-end justify-between">
                         <div className="w-[85px] shrink-0">
                             <label className={`block text-[8px] font-bold uppercase mb-1 pl-1 ${isActive ? 'text-orange-600/80' : 'text-slate-400'}`}>Відправка</label>
-                            <input type="date" value={sendDate || ''} onChange={e => handleChange(itemId, `d${num}Send`, e.target.value)} className={`w-full text-[10px] font-bold border rounded px-1 py-1.5 focus:ring-1 focus:ring-orange-500 outline-none shadow-sm ${isActive ? 'bg-white border-orange-300 text-orange-900' : 'border-slate-200 text-slate-700'}`} />
+                            <input type="date" value={sendDate || ''} onChange={e => handleChange(itemId, `d${num}Send`, e.target.value)} className={`w-full text-[10px] font-bold border rounded px-1 py-1.5 focus:ring-1 focus:ring-orange-500 outline-none shadow-sm ${isActive ? 'bg-white border-orange-200 text-slate-800' : 'border-slate-200 text-slate-700'}`} />
                         </div>
                         
                         <div className="flex flex-col items-center justify-end pb-1.5 px-1 w-[45px]">
@@ -941,12 +946,12 @@
 
                         <div className="w-[85px] shrink-0">
                             <label className={`block text-[8px] font-bold uppercase mb-1 pl-1 ${isActive ? 'text-orange-600/80' : 'text-slate-400'}`}>Прибуття</label>
-                            <input type="date" value={date || ''} onChange={e => handleChange(itemId, `d${num}Date`, e.target.value)} className={`w-full text-[10px] font-bold border rounded px-1 py-1.5 focus:ring-1 focus:ring-orange-500 outline-none shadow-sm ${isActive ? 'bg-white border-orange-300 text-orange-900' : 'border-slate-200 text-slate-700'}`} />
+                            <input type="date" value={date || ''} onChange={e => handleChange(itemId, `d${num}Date`, e.target.value)} className={`w-full text-[10px] font-bold border rounded px-1 py-1.5 focus:ring-1 focus:ring-orange-500 outline-none shadow-sm ${isActive ? 'bg-white border-orange-200 text-slate-800' : 'border-slate-200 text-slate-700'}`} />
                         </div>
                         
                         <div className="flex-1 min-w-0 ml-1">
                             <label className={`block text-[8px] font-bold uppercase mb-1 pl-1 ${isActive ? 'text-orange-600/80' : 'text-slate-400'}`}>Кільк. (шт)</label>
-                            <input type="number" value={qty || ''} onChange={e => handleChange(itemId, `d${num}Qty`, e.target.value)} placeholder="0" className={`w-full text-[12px] font-bold border rounded px-1.5 py-1.5 focus:ring-1 focus:ring-orange-500 outline-none shadow-sm ${isActive ? 'bg-white border-orange-300 text-blue-700' : 'border-slate-200 text-blue-600'}`} />
+                            <input type="number" value={qty || ''} onChange={e => handleChange(itemId, `d${num}Qty`, e.target.value)} placeholder="0" className={`w-full text-[12px] font-bold border rounded px-1.5 py-1.5 focus:ring-1 focus:ring-orange-500 outline-none shadow-sm ${isActive ? 'bg-white border-orange-200 text-blue-700' : 'border-slate-200 text-blue-600'}`} />
                         </div>
                     </div>
 
