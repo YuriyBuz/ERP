@@ -466,13 +466,8 @@
                 setExpandedAi(prev => ({ ...prev, [item.id]: true }));
                 setLoadingAi(prev => ({ ...prev, [item.id]: true }));
                 
-                // ВАЖЛИВО: Для роботи в Canvas ключ має бути порожнім ("").
-                // Для роботи на вашому комп'ютері вставте сюди свій ключ "AIzaSy..."
                 const apiKey = ""; 
-                
-                // Автоматичний вибір моделі: у Canvas працює лише 2.5-flash-preview, локально з вашим ключем - 1.5-flash
-                const modelName = apiKey === "AIzaSyCbppFUATz9p8A9zRKo72NASKU2ybPMV-Q" ? "gemini-2.5-flash-preview-09-2025" : "gemini-1.5-flash";
-                const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
                 
                 const prompt = `Ти - досвідчений експерт з логістики (Supply Chain Manager).
                 Всі товари доставляються з Китаю. 
@@ -508,18 +503,23 @@
 
                 for (let i = 0; i <= 5; i++) {
                     try {
-                        const response = await fetch(url, { 
+                        let response = await fetch(url, { 
                             method: 'POST', 
                             headers: { 'Content-Type': 'application/json' }, 
                             body: JSON.stringify(payload) 
                         });
                         
+                        // Якщо пошук не підтримується (помилка 400), вимикаємо його і пробуємо ще раз
+                        if (response.status === 400 && payload.tools) {
+                            delete payload.tools;
+                            response = await fetch(url, { 
+                                method: 'POST', 
+                                headers: { 'Content-Type': 'application/json' }, 
+                                body: JSON.stringify(payload) 
+                            });
+                        }
+                        
                         if (!response.ok) {
-                            // Якщо ключ не підтримує Google Пошук, він поверне 400. Вимикаємо пошук і пробуємо знову.
-                            if (response.status === 400 && payload.tools) {
-                                delete payload.tools;
-                                continue;
-                            }
                             const errData = await response.json().catch(() => ({}));
                             const apiErrorMsg = errData?.error?.message || `HTTP ${response.status}`;
                             throw new Error(`API Помилка: ${apiErrorMsg}`);
@@ -544,7 +544,7 @@
                         lastError = e.message;
                         console.error("AI Fetch Attempt Error:", e);
                         
-                        if (lastError.includes("API_KEY_INVALID") || lastError.includes("not found")) {
+                        if (lastError.includes("API_KEY_INVALID") || lastError.includes("not found") || lastError.includes("unregistered callers")) {
                             break;
                         }
                         
@@ -560,7 +560,7 @@
                     setAiInsights(prev => ({ 
                         ...prev, 
                         [item.id]: { 
-                            text: `⚠️ AI недоступний.\nПричина: ${lastError}\n\nСпробуйте пізніше або перевірте API-ключ.`, 
+                            text: `⚠️ AI недоступний.\nПричина: ${lastError}\n\nЯкщо ви запускаєте файл локально на своєму комп'ютері, обов'язково вставте ваш API-ключ у змінну apiKey.`, 
                             sources: [] 
                         } 
                     }));
