@@ -28,7 +28,16 @@
         input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
         input[type="date"]::-webkit-calendar-picker-indicator { margin-left: -2px; padding: 0px; cursor: pointer; }
 
-        .pdf-exporting { width: 1550px !important; background-color: #f8fafc !important; padding-bottom: 20px !important; }
+        /* Стилі для правильного експорту в PDF без зсувів */
+        .pdf-exporting { 
+            width: 1450px !important; 
+            max-width: 1450px !important;
+            background-color: #f8fafc !important; 
+            padding: 10px !important; 
+            margin: 0 !important;
+            left: 0 !important;
+            top: 0 !important;
+        }
         .pdf-exporting .overflow-x-auto { overflow: visible !important; }
         .pdf-exporting .sticky { position: relative !important; box-shadow: none !important; border-bottom: 1px solid #e2e8f0 !important; }
         .pdf-exporting .no-print { display: none !important; }
@@ -64,7 +73,7 @@
             return Math.round(val).toLocaleString('uk-UA');
         };
 
-        // --- ГРАФІК КОМПОНЕНТ (З динамічними налаштуваннями) ---
+        // --- ГРАФІК КОМПОНЕНТ З ДАТАМИ ВІДПРАВКИ ТА ЛІНІЯМИ ЗАПАСІВ ---
         const StockChart = ({ item, metrics, todayStr, minMonths, overMonths }) => {
             const width = 1400; 
             const height = 280;
@@ -83,9 +92,9 @@
             const S0 = Number(item.stock) || 0;
 
             const deliveries = [
-                { qty: Number(item.d1Qty)||0, date: item.d1Date ? new Date(item.d1Date) : null },
-                { qty: Number(item.d2Qty)||0, date: item.d2Date ? new Date(item.d2Date) : null },
-                { qty: Number(item.d3Qty)||0, date: item.d3Date ? new Date(item.d3Date) : null }
+                { qty: Number(item.d1Qty)||0, date: item.d1Date ? new Date(item.d1Date) : null, sendDate: item.d1Send ? new Date(item.d1Send) : null },
+                { qty: Number(item.d2Qty)||0, date: item.d2Date ? new Date(item.d2Date) : null, sendDate: item.d2Send ? new Date(item.d2Send) : null },
+                { qty: Number(item.d3Qty)||0, date: item.d3Date ? new Date(item.d3Date) : null, sendDate: item.d3Send ? new Date(item.d3Send) : null }
             ].filter(d => d.date && !isNaN(d.date)).sort((a,b) => a.date - b.date);
 
             let currentStock = S0;
@@ -110,7 +119,26 @@
             });
             points.push({ day: maxDay, stock: currentStock - (maxDay - lastDay) * C_daily });
 
-            // Використовуємо динамічні пороги з налаштувань
+            // Розрахунок точок відправки для графіка
+            const sendPoints = [];
+            deliveries.forEach((d, index) => {
+                if (d.sendDate && !isNaN(d.sendDate)) {
+                    const sendDay = Math.ceil((d.sendDate - today) / (1000*60*60*24));
+                    if (sendDay >= 0 && sendDay <= maxDay) {
+                        // Рахуємо залишок на день відправки
+                        let stockAtSend = S0;
+                        if (sendDay > 0) {
+                            stockAtSend -= sendDay * C_daily;
+                            deliveries.forEach(del => {
+                                const delDay = Math.ceil((del.date - today) / (1000*60*60*24));
+                                if (delDay <= sendDay) stockAtSend += del.qty;
+                            });
+                        }
+                        sendPoints.push({ day: sendDay, stock: stockAtSend, label: `Відпр. №${index+1}` });
+                    }
+                }
+            });
+
             const minStock = C_monthly * Number(minMonths); 
             const overStock = C_monthly * Number(overMonths);
 
@@ -142,7 +170,6 @@
                         <line x1={padLeft} y1={padTop} x2={width-padRight} y2={padTop} stroke="#e2e8f0" strokeDasharray="3 3" />
                         <text x={padLeft - 8} y={padTop + 4} fill="#64748b" fontSize="12" textAnchor="end" fontWeight="bold">{formatNum(yMax)}</text>
                         
-                        {/* Оверсток (динамічний) */}
                         {overStock > 0 && overStock < yMax && (
                             <g>
                                 <line x1={padLeft} y1={overY} x2={width-padRight} y2={overY} stroke="#8b5cf6" strokeWidth="1.5" strokeDasharray="6 4" />
@@ -151,7 +178,6 @@
                             </g>
                         )}
 
-                        {/* Мін. запас (динамічний) */}
                         {minStock > 0 && minStock < yMax && (
                             <g>
                                 <line x1={padLeft} y1={minY} x2={width-padRight} y2={minY} stroke="#f59e0b" strokeWidth="1.5" strokeDasharray="6 4" />
@@ -177,14 +203,24 @@
                             </g>
                         ))}
 
+                        {/* Точки відправки (вертикальні лінії) */}
+                        {sendPoints.map((sp, i) => (
+                            <g key={`send-${i}`}>
+                                <line x1={getX(sp.day)} y1={getY(sp.stock)} x2={getX(sp.day)} y2={height - padBottom} stroke="#f97316" strokeWidth="1.5" strokeDasharray="4 4" />
+                                <circle cx={getX(sp.day)} cy={getY(sp.stock)} r="4" fill="#f97316" />
+                                <text x={getX(sp.day) + 5} y={getY(sp.stock) - 10} fontSize="11" fill="#f97316" fontWeight="bold">{sp.label}</text>
+                            </g>
+                        ))}
+
                         <path d={pathD} fill="none" stroke="#3b82f6" strokeWidth="3" strokeLinejoin="round" />
                         
+                        {/* Точки прибуття */}
                         {points.map((p, i) => {
                             if (i > 0 && points[i-1].day === p.day && points[i-1].stock < p.stock) {
                                 return (
                                     <g key={i}>
                                         <circle cx={getX(p.day)} cy={getY(p.stock)} r="5" fill="#10b981" />
-                                        <text x={getX(p.day) - 10} y={getY(p.stock) - 12} fontSize="13" fill="#047857" fontWeight="bold" textAnchor="end">
+                                        <text x={getX(p.day) - 8} y={getY(p.stock) - 12} fontSize="13" fill="#047857" fontWeight="bold" textAnchor="end">
                                             {formatNum(p.stock)}
                                         </text>
                                     </g>
@@ -216,13 +252,12 @@
             const [filterStatus, setFilterStatus] = useState("all");
             const [sortBy, setSortBy] = useState("default");
             
-            // Налаштування логістики та запасів
             const [settings, setSettings] = useState({ 
                 order: 20, 
                 sea: 60, 
                 port: 30,
-                minStock: 1.5, // Мін. запас за замовчуванням (1.5 міс)
-                overStock: 5   // Оверсток за замовчуванням (5 міс)
+                minStock: 1.5,
+                overStock: 5
             });
 
             const totalLeadTime = Number(settings.order) + Number(settings.sea) + Number(settings.port);
@@ -262,7 +297,7 @@
                 return dString;
             };
 
-            const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycby63Bt7lkbmMFfy9onJovwYgr3ONdnHQLWCLi5KktHsOikFR2qyeavIw0GNxE4aCYjAVg/exec";
+            const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyMuK5Fh2YcsnutoqGq8L9W6yDg9rAkXM1kk7WkBHohFuBm5-9P8uNZhlR7x7wbOp3b/exec";
 
             const handleLoadFromGoogle = () => {
                 setIsImporting(true);
@@ -408,14 +443,23 @@
             const handleSavePDF = () => {
                 const element = document.getElementById('pdf-content');
                 element.classList.add('pdf-exporting');
+                
+                // Фіксація розмірів щоб уникнути зсувів
+                const originalMargin = element.style.margin;
+                element.style.margin = '0';
+                
                 const opt = {
-                    margin:       10,
+                    margin:       [5, 5, 5, 5],
                     filename:     `mrp_report_${formatDisplayDate(reportDate)}.pdf`,
                     image:        { type: 'jpeg', quality: 0.98 },
-                    html2canvas:  { scale: 2, useCORS: true, windowWidth: 1550 },
+                    html2canvas:  { scale: 1.5, useCORS: true, windowWidth: 1450, scrollX: 0, scrollY: 0 },
                     jsPDF:        { unit: 'mm', format: 'a3', orientation: 'landscape' }
                 };
-                html2pdf().set(opt).from(element).save().then(() => element.classList.remove('pdf-exporting'));
+                
+                html2pdf().set(opt).from(element).save().then(() => {
+                    element.classList.remove('pdf-exporting');
+                    element.style.margin = originalMargin;
+                });
             };
 
             const handleAiAnalysis = async (item, metrics) => {
@@ -427,7 +471,7 @@
                 
                 const prompt = `Ти - досвідчений експерт з логістики (Supply Chain Manager).
                 Всі товари доставляються з Китаю. 
-                Загальний цикл логістики (Lead Time) налаштовано на: ${totalLeadTime} днів (Замовлення: ${settings.order}дн + Море: ${settings.sea}дн + Митниця/Склад: ${settings.port}дн).
+                Загальний цикл логістики (Lead Time) налаштовано на: ${totalLeadTime} днів.
                 Безпечний запас (Мін. запас): ${settings.minStock} міс.
                 Оверсток: ${settings.overStock} міс.
 
@@ -443,48 +487,76 @@
                 Твоє завдання:
                 1. Оцінити ризик виникнення дефіциту з огляду на математику залишків.
                 2. Оцінити глобальні логістичні ризики через пошук Google (свята, ситуація на кордонах, порти).
-                3. Дати чіткі рекомендації: коли робити замовлення з урахуванням плеча у ${totalLeadTime} днів та буферу ${settings.minStock} міс.
+                3. Дати чіткі рекомендації: коли робити замовлення.
                 
                 Відповідь має бути професійною, структурованою, короткою. Мова: українська.`;
 
-                try {
-                    const response = await fetch(url, { 
-                        method: 'POST', 
-                        headers: { 'Content-Type': 'application/json' }, 
-                        body: JSON.stringify({ 
-                            contents: [{ parts: [{ text: prompt }] }],
-                            tools: [{ google_search: {} }] 
-                        }) 
-                    });
-                    
-                    if (!response.ok) throw new Error('API Error');
-                    
-                    const data = await response.json();
-                    let textResult = "Помилка відповіді.";
-                    let sources = [];
-                    
-                    if (data.candidates && data.candidates.length > 0) {
-                        textResult = data.candidates[0].content.parts[0].text;
-                        if (data.candidates[0].groundingMetadata && data.candidates[0].groundingMetadata.groundingAttributions) {
-                            sources = data.candidates[0].groundingMetadata.groundingAttributions
-                                .filter(attr => attr.web && attr.web.uri)
-                                .map(attr => ({ uri: attr.web.uri, title: attr.web.title || attr.web.uri }));
-                            sources = Array.from(new Map(sources.map(s => [s.uri, s])).values());
+                const payload = { 
+                    contents: [{ parts: [{ text: prompt }] }],
+                    tools: [{ google_search: {} }] 
+                };
+
+                const delays = [1000, 2000, 4000, 8000, 16000];
+                let lastError = "Невідома помилка";
+                let textResult = null;
+                let sources = [];
+
+                for (let i = 0; i <= 5; i++) {
+                    try {
+                        const response = await fetch(url, { 
+                            method: 'POST', 
+                            headers: { 'Content-Type': 'application/json' }, 
+                            body: JSON.stringify(payload) 
+                        });
+                        
+                        if (!response.ok) {
+                            const errData = await response.json().catch(() => ({}));
+                            const apiErrorMsg = errData?.error?.message || `HTTP ${response.status}`;
+                            throw new Error(`API Помилка: ${apiErrorMsg}`);
+                        }
+                        
+                        const data = await response.json();
+                        
+                        if (data.candidates && data.candidates.length > 0) {
+                            textResult = data.candidates[0].content.parts[0].text;
+                            if (data.candidates[0].groundingMetadata && data.candidates[0].groundingMetadata.groundingAttributions) {
+                                sources = data.candidates[0].groundingMetadata.groundingAttributions
+                                    .filter(attr => attr.web && attr.web.uri)
+                                    .map(attr => ({ uri: attr.web.uri, title: attr.web.title || attr.web.uri }));
+                                sources = Array.from(new Map(sources.map(s => [s.uri, s])).values());
+                            }
+                        } else {
+                            throw new Error("API не повернув жодного тексту.");
+                        }
+                        
+                        break; 
+                    } catch (e) {
+                        lastError = e.message;
+                        console.error("AI Fetch Attempt Error:", e);
+                        
+                        if (lastError.includes("API_KEY_INVALID") || lastError.includes("not found") || lastError.includes("bad request") || lastError.includes("API-ключ")) {
+                            break;
+                        }
+                        
+                        if (i < 5) {
+                            await new Promise(res => setTimeout(res, delays[i]));
                         }
                     }
+                }
+
+                if (textResult) {
                     setAiInsights(prev => ({ ...prev, [item.id]: { text: textResult, sources: sources } }));
-                } catch (e) {
-                    console.error("AI Fetch Error:", e);
+                } else {
                     setAiInsights(prev => ({ 
                         ...prev, 
                         [item.id]: { 
-                            text: "⚠️ AI недоступний. Перевірте з'єднання з інтернетом або переконайтеся, що ви вказали свій API-ключ Gemini у коді.", 
+                            text: `⚠️ AI недоступний.\nПричина: ${lastError}\n\nЯк виправити (якщо запускаєте локально):\n1. Переконайтесь, що вставили ваш API ключ у змінну apiKey.\n2. Змініть у коді назву моделі з 'gemini-2.5-flash-preview-09-2025' на 'gemini-1.5-flash'.\n3. Якщо помилка 400 Bad Request, видаліть рядок 'tools: [{ google_search: {} }]'.`, 
                             sources: [] 
                         } 
                     }));
-                } finally {
-                    setLoadingAi(prev => ({ ...prev, [item.id]: false }));
                 }
+                
+                setLoadingAi(prev => ({ ...prev, [item.id]: false }));
             };
 
             const processedItems = useMemo(() => {
@@ -764,6 +836,7 @@
 
         function DeliveryItem({ num, m, sendDate, date, qty, cont, formatNum, handleChange, itemId }) {
             const isDeficitBefore = m.before !== null && m.before < 0;
+            const isActive = Number(qty) > 0 || date || sendDate;
             
             let transitDays = '-';
             if (sendDate && date) {
@@ -775,38 +848,45 @@
             }
 
             return (
-                <div className="p-4 w-[330px] shrink-0 flex flex-col justify-between relative hover:bg-slate-50 transition-colors">
+                <div className={`p-4 w-[330px] shrink-0 flex flex-col justify-between relative transition-colors ${isActive ? 'bg-orange-50/40 border-[0.5px] border-orange-200' : 'hover:bg-slate-50'}`}>
                     
-                    <div className="flex justify-between items-start mb-3">
+                    <div className="flex justify-between items-center mb-3">
                         <div className="flex items-center gap-2">
-                            <span className="bg-slate-100 text-slate-500 rounded-full w-5 h-5 flex items-center justify-center text-[10px] font-black border border-slate-200">{num}</span>
+                            <span className={`${isActive ? 'bg-orange-100 text-orange-600 border-orange-200' : 'bg-slate-100 text-slate-500 border-slate-200'} rounded-full w-5 h-5 flex items-center justify-center text-[10px] font-black border`}>{num}</span>
                             <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Доставка</span>
                         </div>
-                        {sendDate && date && transitDays !== '-' && (
-                            <span className="text-[11px] font-bold text-orange-600 bg-orange-50 px-2 py-0.5 rounded border border-orange-100">У дорозі: {transitDays} дн.</span>
-                        )}
+                        <input type="text" value={cont || ''} onChange={e => handleChange(itemId, `d${num}Cont`, e.target.value)} placeholder="Контейнер №" className="w-28 text-[10px] font-bold border border-slate-200 rounded px-2 py-1 focus:ring-1 focus:ring-orange-500 outline-none text-slate-600 shadow-sm" />
                     </div>
 
-                    <div className="flex gap-2 mb-2">
-                        <div className="w-[95px] shrink-0">
-                            <label className="block text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1 pl-1 truncate">Відправка</label>
-                            <input type="date" value={sendDate || ''} onChange={e => handleChange(itemId, `d${num}Send`, e.target.value)} className="w-full text-[10px] font-bold border border-slate-200 rounded px-1.5 py-1.5 focus:ring-1 focus:ring-orange-500 outline-none text-slate-700 shadow-sm" />
+                    <div className="flex gap-1 mb-3 items-end justify-between">
+                        <div className="w-[85px] shrink-0">
+                            <label className="block text-[8px] font-bold text-slate-400 uppercase mb-1 pl-1">Відправка</label>
+                            <input type="date" value={sendDate || ''} onChange={e => handleChange(itemId, `d${num}Send`, e.target.value)} className="w-full text-[10px] font-bold border border-slate-200 rounded px-1 py-1.5 focus:ring-1 focus:ring-orange-500 outline-none text-slate-700 shadow-sm" />
                         </div>
-                        <div className="w-[95px] shrink-0">
-                            <label className="block text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1 pl-1 truncate">Прибуття</label>
-                            <input type="date" value={date || ''} onChange={e => handleChange(itemId, `d${num}Date`, e.target.value)} className="w-full text-[10px] font-bold border border-slate-200 rounded px-1.5 py-1.5 focus:ring-1 focus:ring-orange-500 outline-none text-slate-700 shadow-sm" />
+                        
+                        <div className="flex flex-col items-center justify-end pb-1.5 px-1 w-[45px]">
+                            {sendDate && date && transitDays !== '-' ? (
+                                <span className="text-[9px] font-bold text-orange-600 bg-orange-100 px-1 py-0.5 rounded whitespace-nowrap">
+                                    {transitDays} дн.
+                                </span>
+                            ) : (
+                                <span className="text-[9px] text-transparent px-1 py-0.5">-</span>
+                            )}
+                            <div className="w-full h-[1px] bg-slate-300 mt-1"></div>
                         </div>
-                        <div className="flex-1 min-w-0">
-                            <label className="block text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1 pl-1 truncate">Кількість (шт)</label>
-                            <input type="number" value={qty || ''} onChange={e => handleChange(itemId, `d${num}Qty`, e.target.value)} placeholder="0" className="w-full text-[12px] font-bold border border-slate-200 rounded px-2 py-1.5 focus:ring-1 focus:ring-orange-500 outline-none text-blue-600 shadow-sm" />
+
+                        <div className="w-[85px] shrink-0">
+                            <label className="block text-[8px] font-bold text-slate-400 uppercase mb-1 pl-1">Прибуття</label>
+                            <input type="date" value={date || ''} onChange={e => handleChange(itemId, `d${num}Date`, e.target.value)} className="w-full text-[10px] font-bold border border-slate-200 rounded px-1 py-1.5 focus:ring-1 focus:ring-orange-500 outline-none text-slate-700 shadow-sm" />
+                        </div>
+                        
+                        <div className="flex-1 min-w-0 ml-1">
+                            <label className="block text-[8px] font-bold text-slate-400 uppercase mb-1 pl-1">Кільк. (шт)</label>
+                            <input type="number" value={qty || ''} onChange={e => handleChange(itemId, `d${num}Qty`, e.target.value)} placeholder="0" className="w-full text-[12px] font-bold border border-slate-200 rounded px-1.5 py-1.5 focus:ring-1 focus:ring-orange-500 outline-none text-blue-600 shadow-sm" />
                         </div>
                     </div>
 
-                    <div className="w-full mb-3">
-                        <input type="text" value={cont || ''} onChange={e => handleChange(itemId, `d${num}Cont`, e.target.value)} placeholder="Контейнер №..." className="w-full text-[10px] font-bold border border-slate-200 rounded px-2 py-1.5 focus:ring-1 focus:ring-orange-500 outline-none text-slate-600 shadow-sm" />
-                    </div>
-
-                    <div className="mt-auto grid grid-cols-[auto_1fr] gap-y-2 items-center px-1 pt-1 border-t border-slate-100">
+                    <div className="mt-auto grid grid-cols-[auto_1fr] gap-y-2 items-center px-1 pt-2 border-t border-slate-200/60">
                         <span className="text-[11px] text-slate-500 font-medium">За 1 день до:</span>
                         <div className="text-right truncate">
                             <span className={`text-[13px] font-black tracking-tight ${isDeficitBefore ? 'text-red-600' : 'text-slate-800'}`}>
