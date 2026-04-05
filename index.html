@@ -125,7 +125,6 @@
                 if (d.sendDate && !isNaN(d.sendDate)) {
                     const sendDay = Math.ceil((d.sendDate - today) / (1000*60*60*24));
                     if (sendDay >= 0 && sendDay <= maxDay) {
-                        // Рахуємо залишок на день відправки
                         let stockAtSend = S0;
                         if (sendDay > 0) {
                             stockAtSend -= sendDay * C_daily;
@@ -252,13 +251,25 @@
             const [filterStatus, setFilterStatus] = useState("all");
             const [sortBy, setSortBy] = useState("default");
             
-            const [settings, setSettings] = useState({ 
-                order: 20, 
-                sea: 60, 
-                port: 30,
-                minStock: 1.5,
-                overStock: 5
+            // Налаштування логістики та запасів (збереження у localStorage)
+            const [settings, setSettings] = useState(() => {
+                const saved = localStorage.getItem('mrp_settings');
+                if (saved) {
+                    try { return JSON.parse(saved); } catch (e) {}
+                }
+                return { 
+                    order: 20, 
+                    sea: 60, 
+                    port: 30,
+                    minStock: 1.5,
+                    overStock: 5,
+                    apiKey: "AIzaSyCbppFUATz9p8A9zRKo72NASKU2ybPMV-Q" // Ваш ключ встановлено тут
+                };
             });
+
+            useEffect(() => {
+                localStorage.setItem('mrp_settings', JSON.stringify(settings));
+            }, [settings]);
 
             const totalLeadTime = Number(settings.order) + Number(settings.sea) + Number(settings.port);
 
@@ -444,7 +455,6 @@
                 const element = document.getElementById('pdf-content');
                 element.classList.add('pdf-exporting');
                 
-                // Фіксація розмірів щоб уникнути зсувів
                 const originalMargin = element.style.margin;
                 element.style.margin = '0';
                 
@@ -466,8 +476,21 @@
                 setExpandedAi(prev => ({ ...prev, [item.id]: true }));
                 setLoadingAi(prev => ({ ...prev, [item.id]: true }));
                 
-                const apiKey = "AIzaSyCbppFUATz9p8A9zRKo72NASKU2ybPMV-Q"; 
-                const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+                // Перевіряємо чи є ключ
+                if (!settings.apiKey || settings.apiKey.trim() === "") {
+                    setAiInsights(prev => ({ 
+                        ...prev, 
+                        [item.id]: { 
+                            text: `⚠️ API ключ не знайдено.\nБудь ласка, перейдіть у вкладку "Налаштування" ⚙️ (вгорі екрана) та введіть ваш ключ Gemini.`, 
+                            sources: [] 
+                        } 
+                    }));
+                    setLoadingAi(prev => ({ ...prev, [item.id]: false }));
+                    return;
+                }
+
+                // Використовуємо 1.5-flash напряму, без Google Search (щоб уникнути помилок доступу)
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${settings.apiKey.trim()}`;
                 
                 const prompt = `Ти - досвідчений експерт з логістики (Supply Chain Manager).
                 Всі товари доставляються з Китаю. 
@@ -486,38 +509,25 @@
 
                 Твоє завдання:
                 1. Оцінити ризик виникнення дефіциту з огляду на математику залишків.
-                2. Оцінити глобальні логістичні ризики через пошук Google (свята, ситуація на кордонах, порти).
-                3. Дати чіткі рекомендації: коли робити замовлення.
+                2. Дати чіткі рекомендації: коли робити замовлення.
                 
                 Відповідь має бути професійною, структурованою, короткою. Мова: українська.`;
 
                 const payload = { 
-                    contents: [{ parts: [{ text: prompt }] }],
-                    tools: [{ google_search: {} }] 
+                    contents: [{ parts: [{ text: prompt }] }] 
                 };
 
                 const delays = [1000, 2000, 4000, 8000, 16000];
                 let lastError = "Невідома помилка";
                 let textResult = null;
-                let sources = [];
 
                 for (let i = 0; i <= 5; i++) {
                     try {
-                        let response = await fetch(url, { 
+                        const response = await fetch(url, { 
                             method: 'POST', 
                             headers: { 'Content-Type': 'application/json' }, 
                             body: JSON.stringify(payload) 
                         });
-                        
-                        // Якщо пошук не підтримується (помилка 400), вимикаємо його і пробуємо ще раз
-                        if (response.status === 400 && payload.tools) {
-                            delete payload.tools;
-                            response = await fetch(url, { 
-                                method: 'POST', 
-                                headers: { 'Content-Type': 'application/json' }, 
-                                body: JSON.stringify(payload) 
-                            });
-                        }
                         
                         if (!response.ok) {
                             const errData = await response.json().catch(() => ({}));
@@ -529,12 +539,6 @@
                         
                         if (data.candidates && data.candidates.length > 0) {
                             textResult = data.candidates[0].content.parts[0].text;
-                            if (data.candidates[0].groundingMetadata && data.candidates[0].groundingMetadata.groundingAttributions) {
-                                sources = data.candidates[0].groundingMetadata.groundingAttributions
-                                    .filter(attr => attr.web && attr.web.uri)
-                                    .map(attr => ({ uri: attr.web.uri, title: attr.web.title || attr.web.uri }));
-                                sources = Array.from(new Map(sources.map(s => [s.uri, s])).values());
-                            }
                         } else {
                             throw new Error("API не повернув жодного тексту.");
                         }
@@ -544,7 +548,8 @@
                         lastError = e.message;
                         console.error("AI Fetch Attempt Error:", e);
                         
-                        if (lastError.includes("API_KEY_INVALID") || lastError.includes("not found") || lastError.includes("unregistered callers")) {
+                        if (lastError.includes("API_KEY_INVALID")) {
+                            lastError = "Недійсний API ключ. Перевірте правильність ключа в Налаштуваннях.";
                             break;
                         }
                         
@@ -555,12 +560,12 @@
                 }
 
                 if (textResult) {
-                    setAiInsights(prev => ({ ...prev, [item.id]: { text: textResult, sources: sources } }));
+                    setAiInsights(prev => ({ ...prev, [item.id]: { text: textResult, sources: [] } }));
                 } else {
                     setAiInsights(prev => ({ 
                         ...prev, 
                         [item.id]: { 
-                            text: `⚠️ AI недоступний.\nПричина: ${lastError}\n\nЯкщо ви запускаєте файл локально на своєму комп'ютері, обов'язково вставте ваш API-ключ у змінну apiKey.`, 
+                            text: `⚠️ AI недоступний.\nПричина: ${lastError}`, 
                             sources: [] 
                         } 
                     }));
@@ -636,8 +641,22 @@
                     {/* Вміст залежно від обраної вкладки */}
                     {activeTab === 'settings' ? (
                         <div className="max-w-2xl mx-auto mt-10 bg-white p-8 rounded-xl shadow-sm border border-slate-200">
-                            <h2 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2"><IconSettings className="w-5 h-5 text-orange-500" /> Налаштування логістики та запасів</h2>
+                            <h2 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2"><IconSettings className="w-5 h-5 text-orange-500" /> Налаштування системи</h2>
                             
+                            {/* Налаштування API Ключа */}
+                            <h3 className="text-sm font-bold text-slate-700 uppercase mb-3 border-b pb-2">Штучний Інтелект (Gemini)</h3>
+                            <div className="mb-8 bg-purple-50 px-4 py-4 rounded-lg border border-purple-100">
+                                <label className="block text-xs font-bold text-purple-700 mb-1">API Ключ</label>
+                                <input 
+                                    type="text" 
+                                    value={settings.apiKey} 
+                                    onChange={e => setSettings({...settings, apiKey: e.target.value})} 
+                                    className="w-full border border-purple-200 rounded-lg px-3 py-2 text-slate-800 font-mono text-sm outline-none focus:border-purple-500 bg-white" 
+                                    placeholder="AIzaSy..." 
+                                />
+                                <p className="text-[10px] text-purple-600 mt-2">Ключ використовується для генерації рекомендацій та зберігається лише локально у вашому браузері.</p>
+                            </div>
+
                             <h3 className="text-sm font-bold text-slate-700 uppercase mb-3 border-b pb-2">Логістичне плече (Дні)</h3>
                             <div className="grid grid-cols-3 gap-4 mb-6">
                                 <div>
