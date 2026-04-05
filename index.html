@@ -466,7 +466,8 @@
                 setExpandedAi(prev => ({ ...prev, [item.id]: true }));
                 setLoadingAi(prev => ({ ...prev, [item.id]: true }));
                 
-                const apiKey = "AIzaSyCbppFUATz9p8A9zRKo72NASKU2ybPMV-Q"; 
+                // Canvas environment will inject the correct key here
+                const apiKey = ""; 
                 
                 const prompt = `Ти - досвідчений експерт з логістики (Supply Chain Manager).
                 Всі товари доставляються з Китаю. 
@@ -490,11 +491,10 @@
                 
                 Відповідь має бути професійною, структурованою, короткою. Мова: українська.`;
 
-                // Розумний алгоритм перебору конфігурацій (моделей) для пошуку робочої
+                // Для середовища Canvas повертаємо лише підтримувану тут модель
                 const configs = [
-                    { model: 'gemini-1.5-flash', useSearch: true },
-                    { model: 'gemini-1.5-flash', useSearch: false },
-                    { model: 'gemini-1.5-pro-latest', useSearch: false }
+                    { model: 'gemini-2.5-flash-preview-09-2025', useSearch: true },
+                    { model: 'gemini-2.5-flash-preview-09-2025', useSearch: false }
                 ];
 
                 let textResult = null;
@@ -508,7 +508,6 @@
                         contents: [{ parts: [{ text: prompt }] }]
                     };
                     
-                    // Підключаємо пошук лише якщо це дозволено поточною конфігурацією
                     if (config.useSearch) {
                         payload.tools = [{ google_search: {} }];
                     }
@@ -535,12 +534,11 @@
                                     .map(attr => ({ uri: attr.web.uri, title: attr.web.title || attr.web.uri }));
                                 sources = Array.from(new Map(sources.map(s => [s.uri, s])).values());
                             }
-                            break; // Успішно отримали відповідь, виходимо з циклу
+                            break; 
                         }
                     } catch (e) {
                         lastError = e.message;
                         console.error(`Помилка API з моделлю ${config.model} (Пошук: ${config.useSearch}):`, e);
-                        // Якщо ключ недійсний - припиняємо спроби
                         if (lastError.includes("API_KEY_INVALID")) break; 
                     }
                 }
@@ -551,7 +549,7 @@
                     setAiInsights(prev => ({ 
                         ...prev, 
                         [item.id]: { 
-                            text: `⚠️ AI недоступний.\nПричина: ${lastError}\n\nЩось пішло не так під час з'єднання з сервером Google. Перевірте, чи правильний API-ключ вставлено у код або спробуйте пізніше.`, 
+                            text: `⚠️ AI недоступний.\nПричина: ${lastError}\n\nЩось пішло не так під час з'єднання з сервером Google. Спробуйте пізніше.`, 
                             sources: [] 
                         } 
                     }));
