@@ -466,10 +466,8 @@
                 setExpandedAi(prev => ({ ...prev, [item.id]: true }));
                 setLoadingAi(prev => ({ ...prev, [item.id]: true }));
                 
-                // Вставлено ваш API Ключ Gemini
+                // Вставлено ваш особистий API-ключ Gemini
                 const apiKey = "AIzaSyCbppFUATz9p8A9zRKo72NASKU2ybPMV-Q"; 
-                // Використовуємо стабільну модель
-                const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
                 
                 const prompt = `Ти - досвідчений експерт з логістики (Supply Chain Manager).
                 Всі товари доставляються з Китаю. 
@@ -493,28 +491,45 @@
                 
                 Відповідь має бути професійною, структурованою, короткою. Мова: українська.`;
 
-                const payload = { 
-                    contents: [{ parts: [{ text: prompt }] }],
-                    tools: [{ google_search: {} }] 
-                };
+                // Масив моделей для спроб: від нових/експериментальних до стабільних
+                const modelsToTry = [
+                    'gemini-2.5-flash-preview-09-2025', 
+                    'gemini-1.5-flash',
+                    'gemini-1.5-pro'
+                ];
 
-                const delays = [1000, 2000, 4000, 8000, 16000];
-                let lastError = "Невідома помилка";
                 let textResult = null;
                 let sources = [];
+                let lastError = "Невідома помилка";
 
-                for (let i = 0; i <= 5; i++) {
+                for (const model of modelsToTry) {
+                    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+                    
                     try {
-                        const response = await fetch(url, { 
+                        // Спроба 1: З інструментом пошуку Google
+                        let response = await fetch(url, { 
                             method: 'POST', 
                             headers: { 'Content-Type': 'application/json' }, 
-                            body: JSON.stringify(payload) 
+                            body: JSON.stringify({ 
+                                contents: [{ parts: [{ text: prompt }] }],
+                                tools: [{ google_search: {} }] 
+                            }) 
                         });
                         
+                        // Якщо пошук не підтримується для вашого ключа/акаунта (помилка 400), пробуємо без нього
+                        if (response.status === 400) {
+                            response = await fetch(url, { 
+                                method: 'POST', 
+                                headers: { 'Content-Type': 'application/json' }, 
+                                body: JSON.stringify({ 
+                                    contents: [{ parts: [{ text: prompt }] }]
+                                }) 
+                            });
+                        }
+
                         if (!response.ok) {
                             const errData = await response.json().catch(() => ({}));
-                            const apiErrorMsg = errData?.error?.message || `HTTP ${response.status}`;
-                            throw new Error(`API Помилка: ${apiErrorMsg}`);
+                            throw new Error(errData?.error?.message || `HTTP ${response.status}`);
                         }
                         
                         const data = await response.json();
@@ -527,22 +542,12 @@
                                     .map(attr => ({ uri: attr.web.uri, title: attr.web.title || attr.web.uri }));
                                 sources = Array.from(new Map(sources.map(s => [s.uri, s])).values());
                             }
-                        } else {
-                            throw new Error("API не повернув жодного тексту.");
+                            break; // Успішно отримали відповідь, виходимо з циклу спроб
                         }
-                        
-                        break; 
                     } catch (e) {
                         lastError = e.message;
-                        console.error("AI Fetch Attempt Error:", e);
-                        
-                        if (lastError.includes("API_KEY_INVALID") || lastError.includes("not found") || lastError.includes("bad request") || lastError.includes("API-ключ")) {
-                            break;
-                        }
-                        
-                        if (i < 5) {
-                            await new Promise(res => setTimeout(res, delays[i]));
-                        }
+                        console.error(`Помилка API з моделлю ${model}:`, e);
+                        if (lastError.includes("API_KEY_INVALID")) break; // Недійсний ключ, немає сенсу пробувати далі
                     }
                 }
 
@@ -552,7 +557,7 @@
                     setAiInsights(prev => ({ 
                         ...prev, 
                         [item.id]: { 
-                            text: `⚠️ AI недоступний.\nПричина: ${lastError}\n\nЯк виправити (якщо запускаєте локально):\n1. Переконайтесь, що вставили ваш API ключ у змінну apiKey.\n2. Змініть у коді назву моделі з 'gemini-2.5-flash-preview-09-2025' на 'gemini-1.5-flash'.\n3. Якщо помилка 400 Bad Request, видаліть рядок 'tools: [{ google_search: {} }]'.`, 
+                            text: `⚠️ AI недоступний.\nПричина: ${lastError}\n\nЩось пішло не так під час з'єднання з сервером Google. Перевірте, чи правильний API-ключ вставлено у код або спробуйте пізніше.`, 
                             sources: [] 
                         } 
                     }));
