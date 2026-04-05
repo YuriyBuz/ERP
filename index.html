@@ -466,7 +466,6 @@
                 setExpandedAi(prev => ({ ...prev, [item.id]: true }));
                 setLoadingAi(prev => ({ ...prev, [item.id]: true }));
                 
-                // Вставлено ваш особистий API-ключ Gemini
                 const apiKey = "AIzaSyCbppFUATz9p8A9zRKo72NASKU2ybPMV-Q"; 
                 
                 const prompt = `Ти - досвідчений експерт з логістики (Supply Chain Manager).
@@ -491,42 +490,36 @@
                 
                 Відповідь має бути професійною, структурованою, короткою. Мова: українська.`;
 
-                // Масив моделей для спроб: від нових/експериментальних до стабільних
-                const modelsToTry = [
-                    'gemini-2.5-flash-preview-09-2025', 
-                    'gemini-1.5-flash',
-                    'gemini-1.5-pro'
+                // Розумний алгоритм перебору конфігурацій (моделей) для пошуку робочої
+                const configs = [
+                    { model: 'gemini-1.5-flash', useSearch: true },
+                    { model: 'gemini-1.5-flash', useSearch: false },
+                    { model: 'gemini-1.5-pro-latest', useSearch: false }
                 ];
 
                 let textResult = null;
                 let sources = [];
                 let lastError = "Невідома помилка";
 
-                for (const model of modelsToTry) {
-                    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+                for (const config of configs) {
+                    const url = `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent?key=${apiKey}`;
                     
+                    const payload = {
+                        contents: [{ parts: [{ text: prompt }] }]
+                    };
+                    
+                    // Підключаємо пошук лише якщо це дозволено поточною конфігурацією
+                    if (config.useSearch) {
+                        payload.tools = [{ google_search: {} }];
+                    }
+
                     try {
-                        // Спроба 1: З інструментом пошуку Google
-                        let response = await fetch(url, { 
+                        const response = await fetch(url, { 
                             method: 'POST', 
                             headers: { 'Content-Type': 'application/json' }, 
-                            body: JSON.stringify({ 
-                                contents: [{ parts: [{ text: prompt }] }],
-                                tools: [{ google_search: {} }] 
-                            }) 
+                            body: JSON.stringify(payload) 
                         });
                         
-                        // Якщо пошук не підтримується для вашого ключа/акаунта (помилка 400), пробуємо без нього
-                        if (response.status === 400) {
-                            response = await fetch(url, { 
-                                method: 'POST', 
-                                headers: { 'Content-Type': 'application/json' }, 
-                                body: JSON.stringify({ 
-                                    contents: [{ parts: [{ text: prompt }] }]
-                                }) 
-                            });
-                        }
-
                         if (!response.ok) {
                             const errData = await response.json().catch(() => ({}));
                             throw new Error(errData?.error?.message || `HTTP ${response.status}`);
@@ -542,12 +535,13 @@
                                     .map(attr => ({ uri: attr.web.uri, title: attr.web.title || attr.web.uri }));
                                 sources = Array.from(new Map(sources.map(s => [s.uri, s])).values());
                             }
-                            break; // Успішно отримали відповідь, виходимо з циклу спроб
+                            break; // Успішно отримали відповідь, виходимо з циклу
                         }
                     } catch (e) {
                         lastError = e.message;
-                        console.error(`Помилка API з моделлю ${model}:`, e);
-                        if (lastError.includes("API_KEY_INVALID")) break; // Недійсний ключ, немає сенсу пробувати далі
+                        console.error(`Помилка API з моделлю ${config.model} (Пошук: ${config.useSearch}):`, e);
+                        // Якщо ключ недійсний - припиняємо спроби
+                        if (lastError.includes("API_KEY_INVALID")) break; 
                     }
                 }
 
