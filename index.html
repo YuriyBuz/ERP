@@ -6,62 +6,44 @@
     <title>MRP Import - Foodline</title>
     
     <!-- PWA та іконки -->
-    <meta name="theme-color" content="#10b981">
+    <meta name="theme-color" content="#f97316">
     <link rel="apple-touch-icon" href="https://foodline-production.com/wp-content/uploads/2021/10/3752781497_3752781497.webp">
     
-    <!-- Підключаємо TailwindCSS для стилів -->
+    <!-- Підключаємо TailwindCSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- Підключаємо React, Babel та html2pdf для генерації PDF -->
+    <!-- Підключаємо React, Babel та html2pdf -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
     <style>
-        /* Кастомний скролбар для зручності горизонтальної прокрутки */
         ::-webkit-scrollbar { height: 8px; width: 8px; }
         ::-webkit-scrollbar-track { background: #f1f5f9; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        ::-webkit-scrollbar-thumb:hover { background: #f97316; }
         
-        /* Прибираємо стрілки у числових полях */
         input[type=number]::-webkit-inner-spin-button, 
         input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
-        
-        /* Ущільнюємо стандартні іконки календаря для дати */
         input[type="date"]::-webkit-calendar-picker-indicator { margin-left: -2px; padding: 0px; cursor: pointer; }
 
-        /* Стилі спеціально для правильного експорту в PDF */
-        .pdf-exporting {
-            width: 1550px !important;
-            background-color: #f8fafc !important;
-            padding-bottom: 20px !important;
-        }
-        .pdf-exporting .overflow-x-auto {
-            overflow: visible !important;
-        }
-        .pdf-exporting .sticky {
-            position: relative !important;
-            box-shadow: none !important;
-            border-bottom: 1px solid #e2e8f0 !important;
-        }
-        .pdf-exporting .no-print {
-            display: none !important;
-        }
-        .pdf-exporting input {
-            border: none !important;
-            background: transparent !important;
-            padding: 0 !important;
-            box-shadow: none !important;
-        }
+        .pdf-exporting { width: 1550px !important; background-color: #f8fafc !important; padding-bottom: 20px !important; }
+        .pdf-exporting .overflow-x-auto { overflow: visible !important; }
+        .pdf-exporting .sticky { position: relative !important; box-shadow: none !important; border-bottom: 1px solid #e2e8f0 !important; }
+        .pdf-exporting .no-print { display: none !important; }
+        .pdf-exporting input { border: none !important; background: transparent !important; padding: 0 !important; box-shadow: none !important; }
+        
+        .accordion-content { transition: max-height 0.3s ease-in-out, opacity 0.3s ease-in-out, padding 0.3s ease; overflow: hidden; }
+        .accordion-collapsed { max-height: 0; opacity: 0; padding-top: 0; padding-bottom: 0; border: none; }
+        .accordion-expanded { max-height: 1200px; opacity: 1; }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-800 font-sans pb-20">
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect } = React;
+        const { useState, useEffect, useMemo } = React;
 
         // --- ІКОНКИ ---
         const IconPlus = ({className="w-4 h-4"}) => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>;
@@ -72,15 +54,178 @@
         const IconRefresh = ({className="w-4 h-4"}) => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21 2v6h-6"></path><path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path><path d="M3 22v-6h6"></path><path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path></svg>;
         const IconInfo = ({className="w-4 h-4"}) => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>;
         const IconPDF = ({className="w-4 h-4"}) => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>;
+        const IconSettings = ({className="w-4 h-4"}) => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>;
+        const IconSave = ({className="w-4 h-4"}) => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>;
+        const IconChart = ({className="w-4 h-4"}) => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>;
+        const IconSearch = ({className="w-4 h-4"}) => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>;
+
+        const formatNum = (val) => {
+            if (val === null || val === undefined || isNaN(val) || val === '') return '-';
+            return Math.round(val).toLocaleString('uk-UA');
+        };
+
+        // --- ГРАФІК КОМПОНЕНТ (З динамічними налаштуваннями) ---
+        const StockChart = ({ item, metrics, todayStr, minMonths, overMonths }) => {
+            const width = 1400; 
+            const height = 280;
+            const padLeft = 70;
+            const padRight = 60;
+            const padTop = 30;
+            const padBottom = 35;
+            const innerWidth = width - padLeft - padRight;
+            const innerHeight = height - padTop - padBottom;
+
+            const today = new Date(todayStr);
+            today.setHours(0,0,0,0);
+            
+            const C_daily = (Number(item.consumption) || 0) / 30;
+            const C_monthly = Number(item.consumption) || 0;
+            const S0 = Number(item.stock) || 0;
+
+            const deliveries = [
+                { qty: Number(item.d1Qty)||0, date: item.d1Date ? new Date(item.d1Date) : null },
+                { qty: Number(item.d2Qty)||0, date: item.d2Date ? new Date(item.d2Date) : null },
+                { qty: Number(item.d3Qty)||0, date: item.d3Date ? new Date(item.d3Date) : null }
+            ].filter(d => d.date && !isNaN(d.date)).sort((a,b) => a.date - b.date);
+
+            let currentStock = S0;
+            let points = [{ day: 0, stock: S0 }];
+            
+            let maxDay = 180; 
+            if (deliveries.length > 0) {
+                const lastDelDay = Math.max(0, Math.ceil((deliveries[deliveries.length-1].date - today) / (1000*60*60*24)));
+                maxDay = Math.max(180, lastDelDay + 15);
+            }
+
+            let lastDay = 0;
+            deliveries.forEach(d => {
+                const day = Math.max(0, Math.ceil((d.date - today) / (1000*60*60*24)));
+                if (day > lastDay) {
+                    const beforeStock = currentStock - (day - lastDay) * C_daily;
+                    points.push({ day: day, stock: beforeStock });
+                    currentStock = beforeStock + d.qty;
+                    points.push({ day: day, stock: currentStock }); 
+                    lastDay = day;
+                }
+            });
+            points.push({ day: maxDay, stock: currentStock - (maxDay - lastDay) * C_daily });
+
+            // Використовуємо динамічні пороги з налаштувань
+            const minStock = C_monthly * Number(minMonths); 
+            const overStock = C_monthly * Number(overMonths);
+
+            const maxStockVal = Math.max(...points.map(p => p.stock), minStock, overStock);
+            const minStockVal = Math.min(...points.map(p => p.stock), 0);
+            
+            const yMax = Math.max(maxStockVal * 1.1, overStock * 1.1);
+            const yMin = Math.min(0, minStockVal - (Math.abs(minStockVal) * 0.1)); 
+            const yRange = yMax - yMin;
+            
+            const getX = (day) => padLeft + (day / maxDay) * innerWidth;
+            const getY = (stock) => padTop + innerHeight - ((stock - yMin) / (yRange || 1)) * innerHeight;
+
+            const pathD = points.map((p, i) => `${i===0 ? 'M' : 'L'} ${getX(p.day)},${getY(p.stock)}`).join(' ');
+            
+            const zeroY = getY(0);
+            const minY = getY(minStock);
+            const overY = getY(overStock);
+
+            const xTicks = [];
+            for (let i = 0; i <= maxDay; i += 30) {
+                const d = new Date(today.getTime() + i * 86400000);
+                xTicks.push({ day: i, label: d.toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit' }) });
+            }
+
+            return (
+                <div className="w-full overflow-x-auto border border-slate-200 rounded-lg p-4 bg-white shadow-sm">
+                    <svg width="100%" height="auto" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet" className="min-w-[1000px]">
+                        <line x1={padLeft} y1={padTop} x2={width-padRight} y2={padTop} stroke="#e2e8f0" strokeDasharray="3 3" />
+                        <text x={padLeft - 8} y={padTop + 4} fill="#64748b" fontSize="12" textAnchor="end" fontWeight="bold">{formatNum(yMax)}</text>
+                        
+                        {/* Оверсток (динамічний) */}
+                        {overStock > 0 && overStock < yMax && (
+                            <g>
+                                <line x1={padLeft} y1={overY} x2={width-padRight} y2={overY} stroke="#8b5cf6" strokeWidth="1.5" strokeDasharray="6 4" />
+                                <text x={padLeft - 8} y={overY + 4} fill="#8b5cf6" fontSize="12" textAnchor="end" fontWeight="bold">Оверсток</text>
+                                <text x={width - padRight + 8} y={overY + 4} fill="#8b5cf6" fontSize="11" textAnchor="start">{overMonths} міс.</text>
+                            </g>
+                        )}
+
+                        {/* Мін. запас (динамічний) */}
+                        {minStock > 0 && minStock < yMax && (
+                            <g>
+                                <line x1={padLeft} y1={minY} x2={width-padRight} y2={minY} stroke="#f59e0b" strokeWidth="1.5" strokeDasharray="6 4" />
+                                <text x={padLeft - 8} y={minY + 4} fill="#f59e0b" fontSize="12" textAnchor="end" fontWeight="bold">Мін. запас</text>
+                                <text x={width - padRight + 8} y={minY + 4} fill="#f59e0b" fontSize="11" textAnchor="start">{minMonths} міс.</text>
+                            </g>
+                        )}
+
+                        <line x1={padLeft} y1={zeroY} x2={width-padRight} y2={zeroY} stroke="#ef4444" strokeWidth="1.5" strokeDasharray="4 4" />
+                        <text x={padLeft - 8} y={zeroY + 4} fill="#ef4444" fontSize="12" textAnchor="end" fontWeight="bold">0</text>
+                        
+                        {yMin < 0 && (
+                            <text x={padLeft - 8} y={getY(yMin) + 4} fill="#ef4444" fontSize="12" textAnchor="end">{formatNum(yMin)}</text>
+                        )}
+
+                        <line x1={padLeft} y1={padTop} x2={padLeft} y2={height - padBottom} stroke="#94a3b8" strokeWidth="2" />
+                        <line x1={padLeft} y1={height - padBottom} x2={width-padRight} y2={height - padBottom} stroke="#94a3b8" strokeWidth="2" />
+
+                        {xTicks.map((t, idx) => (
+                            <g key={t.day}>
+                                <line x1={getX(t.day)} y1={height - padBottom} x2={getX(t.day)} y2={height - padBottom + 6} stroke="#94a3b8" strokeWidth="2" />
+                                <text x={getX(t.day)} y={height - padBottom + 20} fontSize="12" fill="#64748b" textAnchor="middle" fontWeight="500">{t.label}</text>
+                            </g>
+                        ))}
+
+                        <path d={pathD} fill="none" stroke="#3b82f6" strokeWidth="3" strokeLinejoin="round" />
+                        
+                        {points.map((p, i) => {
+                            if (i > 0 && points[i-1].day === p.day && points[i-1].stock < p.stock) {
+                                return (
+                                    <g key={i}>
+                                        <circle cx={getX(p.day)} cy={getY(p.stock)} r="5" fill="#10b981" />
+                                        <text x={getX(p.day) - 10} y={getY(p.stock) - 12} fontSize="13" fill="#047857" fontWeight="bold" textAnchor="end">
+                                            {formatNum(p.stock)}
+                                        </text>
+                                    </g>
+                                );
+                            }
+                            if (i === 0) return <circle key={i} cx={getX(p.day)} cy={getY(p.stock)} r="5" fill="#3b82f6" />;
+                            return null;
+                        })}
+                    </svg>
+                </div>
+            );
+        };
 
         function App() {
-            const [reportDate, setReportDate] = useState(new Date().toISOString().split('T')[0]); 
+            const [reportDate] = useState(new Date().toISOString().split('T')[0]); 
             const [items, setItems] = useState([]);
             const [isImporting, setIsImporting] = useState(true);
+            const [isSaving, setIsSaving] = useState(false);
             const [errorMsg, setErrorMsg] = useState("");
             const [aiInsights, setAiInsights] = useState({});
             const [loadingAi, setLoadingAi] = useState({});
             const [lastUpdated, setLastUpdated] = useState("Оновлюється...");
+            
+            const [expandedChart, setExpandedChart] = useState({}); 
+            const [expandedAi, setExpandedAi] = useState({});
+
+            const [activeTab, setActiveTab] = useState('main');
+            const [searchQuery, setSearchQuery] = useState("");
+            const [filterStatus, setFilterStatus] = useState("all");
+            const [sortBy, setSortBy] = useState("default");
+            
+            // Налаштування логістики та запасів
+            const [settings, setSettings] = useState({ 
+                order: 20, 
+                sea: 60, 
+                port: 30,
+                minStock: 1.5, // Мін. запас за замовчуванням (1.5 міс)
+                overStock: 5   // Оверсток за замовчуванням (5 міс)
+            });
+
+            const totalLeadTime = Number(settings.order) + Number(settings.sea) + Number(settings.port);
 
             useEffect(() => {
                 handleLoadFromGoogle(true);
@@ -97,7 +242,6 @@
                 if (!dateStr) return '';
                 let d = String(dateStr).replace(/['"]/g, '').trim();
                 if (!d || d === '-') return '';
-                
                 if (d.includes('.')) {
                     const parts = d.split('.');
                     if (parts.length === 3) {
@@ -111,11 +255,6 @@
                 return d;
             };
 
-            const formatNum = (val) => {
-                if (val === null || val === undefined || isNaN(val) || val === '') return '-';
-                return Math.round(val).toLocaleString('uk-UA');
-            };
-
             const formatDisplayDate = (dString) => {
                 if (!dString) return '';
                 const parts = dString.split('-');
@@ -123,12 +262,12 @@
                 return dString;
             };
 
-            const handleLoadFromGoogle = (isInitialLoad = false) => {
+            const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyMuK5Fh2YcsnutoqGq8L9W6yDg9rAkXM1kk7WkBHohFuBm5-9P8uNZhlR7x7wbOp3b/exec";
+
+            const handleLoadFromGoogle = () => {
                 setIsImporting(true);
                 setErrorMsg("");
-                const targetUrl = "https://script.google.com/macros/s/AKfycbyMuK5Fh2YcsnutoqGq8L9W6yDg9rAkXM1kk7WkBHohFuBm5-9P8uNZhlR7x7wbOp3b/exec";
-
-                fetch(targetUrl)
+                fetch(GOOGLE_SCRIPT_URL)
                     .then(response => response.json())
                     .then(result => {
                         if (result.error) throw new Error(result.error);
@@ -138,7 +277,6 @@
                         for (let i = 2; i < rows.length; i++) {
                             const row = rows[i];
                             if (!row || !row[0]) continue;
-                            
                             const name = String(row[0]).trim();
                             if (name === '' || name.toLowerCase().includes('шт') || name.toLowerCase().includes('мес') || name.toLowerCase().includes('итого')) continue;
 
@@ -149,32 +287,57 @@
                                 consumption: parseNumberSafe(row[2]), 
                                 d1Send: parseDateStr(row[3]),
                                 d1Date: parseDateStr(row[4]),        
-                                d1Qty: parseNumberSafe(row[5]),       
+                                d1Qty: parseNumberSafe(row[5]),
+                                d1Cont: String(row[6] || ''),       
                                 d2Send: parseDateStr(row[7]),
                                 d2Date: parseDateStr(row[8]),        
-                                d2Qty: parseNumberSafe(row[9]),       
+                                d2Qty: parseNumberSafe(row[9]), 
+                                d2Cont: String(row[10] || ''),      
                                 d3Send: parseDateStr(row[11]),
                                 d3Date: parseDateStr(row[12]),        
                                 d3Qty: parseNumberSafe(row[13]),
+                                d3Cont: String(row[14] || ''),
                             });
                         }
-
                         setItems(parsedItems);
-                        
                         const now = new Date();
-                        const dd = String(now.getDate()).padStart(2, '0');
-                        const mm = String(now.getMonth() + 1).padStart(2, '0');
-                        const yyyy = now.getFullYear();
-                        const hh = String(now.getHours()).padStart(2, '0');
-                        const min = String(now.getMinutes()).padStart(2, '0');
-                        setLastUpdated(`${dd}.${mm}.${yyyy} ${hh}:${min}`);
-                        
+                        setLastUpdated(`${String(now.getDate()).padStart(2, '0')}.${String(now.getMonth() + 1).padStart(2, '0')}.${now.getFullYear()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`);
                         setIsImporting(false);
                     })
                     .catch(err => {
                         setErrorMsg("Помилка підключення: " + err.message);
                         setIsImporting(false);
                     });
+            };
+
+            const handleSaveToGoogle = () => {
+                setIsSaving(true);
+                setErrorMsg("");
+                const payloadData = items.map(it => [
+                    it.name, it.stock, it.consumption,
+                    it.d1Send, it.d1Date, it.d1Qty, it.d1Cont || "",
+                    it.d2Send, it.d2Date, it.d2Qty, it.d2Cont || "",
+                    it.d3Send, it.d3Date, it.d3Qty, it.d3Cont || ""
+                ]);
+                
+                fetch(GOOGLE_SCRIPT_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' }, 
+                    body: JSON.stringify({ action: 'save', data: payloadData })
+                })
+                .then(r => r.json())
+                .then(res => {
+                    setIsSaving(false);
+                    if (res.status === 'success') {
+                        alert("Дані успішно збережено в Google Таблицю!");
+                    } else {
+                        alert("Запит відправлено! (Переконайтеся, що ваш Code.gs обробляє POST збереження).");
+                    }
+                })
+                .catch(err => {
+                    setIsSaving(false);
+                    alert("Запит відправлено. Якщо дані не оновилися, перевірте налаштування doPost у вашому Google Script.");
+                });
             };
 
             const calculateMetrics = (item) => {
@@ -193,9 +356,7 @@
                     return { ...d, dateObj, isValidDate: dateObj && !isNaN(dateObj) };
                 });
 
-                const validDeliveries = deliveries
-                    .filter(d => d.isValidDate)
-                    .sort((a, b) => a.dateObj - b.dateObj);
+                const validDeliveries = deliveries.filter(d => d.isValidDate).sort((a, b) => a.dateObj - b.dateObj);
 
                 let runningAddedStock = 0;
                 const results = {};
@@ -204,10 +365,8 @@
                     const d = validDeliveries[i];
                     const diffTime = d.dateObj - today;
                     const daysFromToday = Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
-                    
                     const before = S0 - (daysFromToday * C_daily) + runningAddedStock;
                     const after = before + d.qty;
-                    
                     results[d.id] = { before, after };
                     runningAddedStock += d.qty; 
                 }
@@ -222,19 +381,23 @@
                 };
             };
 
+            const toggleChart = (id) => { 
+                setExpandedChart(prev => ({ ...prev, [id]: !prev[id] })); 
+            };
+            const toggleAi = (id) => { 
+                setExpandedAi(prev => ({ ...prev, [id]: !prev[id] })); 
+            };
+
             const handleChange = (id, field, value) => {
                 setItems(items.map(item => item.id === id ? { ...item, [field]: value } : item));
-                if (aiInsights[id]) {
-                    const newInsights = { ...aiInsights };
-                    delete newInsights[id];
-                    setAiInsights(newInsights);
-                }
             };
 
             const handleAddItem = () => {
                 setItems([{
                     id: Date.now(), name: '', stock: 0, consumption: 0,
-                    d1Send: '', d1Qty: 0, d1Date: '', d2Send: '', d2Qty: 0, d2Date: '', d3Send: '', d3Qty: 0, d3Date: ''
+                    d1Send: '', d1Qty: 0, d1Date: '', d1Cont: '',
+                    d2Send: '', d2Qty: 0, d2Date: '', d2Cont: '',
+                    d3Send: '', d3Qty: 0, d3Date: '', d3Cont: ''
                 }, ...items]);
             };
 
@@ -245,7 +408,6 @@
             const handleSavePDF = () => {
                 const element = document.getElementById('pdf-content');
                 element.classList.add('pdf-exporting');
-                
                 const opt = {
                     margin:       10,
                     filename:     `mrp_report_${formatDisplayDate(reportDate)}.pdf`,
@@ -253,20 +415,21 @@
                     html2canvas:  { scale: 2, useCORS: true, windowWidth: 1550 },
                     jsPDF:        { unit: 'mm', format: 'a3', orientation: 'landscape' }
                 };
-                
-                html2pdf().set(opt).from(element).save().then(() => {
-                    element.classList.remove('pdf-exporting');
-                });
+                html2pdf().set(opt).from(element).save().then(() => element.classList.remove('pdf-exporting'));
             };
 
             const handleAiAnalysis = async (item, metrics) => {
+                setExpandedAi(prev => ({ ...prev, [item.id]: true }));
                 setLoadingAi(prev => ({ ...prev, [item.id]: true }));
+                
                 const apiKey = ""; 
                 const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
                 
-                const prompt = `Ти - досвідчений експерт з логістики (Supply Chain Manager) та ризик-аналітик.
-                Маршрут постачання: Виробництво в Китаї -> Доставка морем -> Транзит через Польщу -> Митне оформлення -> Склад в Україні.
-                Загальний цикл логістики (Lead Time): ~110 днів.
+                const prompt = `Ти - досвідчений експерт з логістики (Supply Chain Manager).
+                Всі товари доставляються з Китаю. 
+                Загальний цикл логістики (Lead Time) налаштовано на: ${totalLeadTime} днів (Замовлення: ${settings.order}дн + Море: ${settings.sea}дн + Митниця/Склад: ${settings.port}дн).
+                Безпечний запас (Мін. запас): ${settings.minStock} міс.
+                Оверсток: ${settings.overStock} міс.
 
                 Проаналізуй позицію: "${item.name}". 
                 Дата розрахунку: ${formatDisplayDate(reportDate)}.
@@ -278,14 +441,11 @@
                   Поставка №3: ${metrics.d3.before !== null ? Math.round(metrics.d3.before) : '-'} шт.
 
                 Твоє завдання:
-                1. Оцінити ризик виникнення дефіциту товару на складі з огляду на математику залишків (проаналізуй всі 3 поставки).
-                2. Оцінити глобальні логістичні ризики, використавши пошук Google. Шукай актуальну інформацію про:
-                   - Політичні, економічні та військові чинники (ситуація в Червоному морі/Суеці, страйки європейських перевізників, ситуація на кордоні з Польщею, ризики в Україні).
-                   - Кліматичні фактори (шторми, тайфуни в Азії).
-                   - Релігійні та державні свята (святкові дні в Китаї, ЄС, Україні).
-                3. Дати чіткі рекомендації: коли робити замовлення і які обсяги буферного запасу (Safety Stock) варто закласти.
+                1. Оцінити ризик виникнення дефіциту з огляду на математику залишків.
+                2. Оцінити глобальні логістичні ризики через пошук Google (свята, ситуація на кордонах, порти).
+                3. Дати чіткі рекомендації: коли робити замовлення з урахуванням плеча у ${totalLeadTime} днів та буферу ${settings.minStock} міс.
                 
-                Відповідь має бути професійною, структурованою (марковані списки), короткою і по суті. ОБОВ'ЯЗКОВО спирайся на знайдений фактаж. Мова: українська.`;
+                Відповідь має бути професійною, структурованою, короткою. Мова: українська.`;
 
                 try {
                     const response = await fetch(url, { 
@@ -293,182 +453,316 @@
                         headers: { 'Content-Type': 'application/json' }, 
                         body: JSON.stringify({ 
                             contents: [{ parts: [{ text: prompt }] }],
-                            tools: [{ google_search: {} }] // Увімкнення Grounding для пошуку актуальних подій
+                            tools: [{ google_search: {} }] 
                         }) 
                     });
-                    const data = await response.json();
                     
+                    if (!response.ok) throw new Error('API Error');
+                    
+                    const data = await response.json();
                     let textResult = "Помилка відповіді.";
                     let sources = [];
-
+                    
                     if (data.candidates && data.candidates.length > 0) {
                         textResult = data.candidates[0].content.parts[0].text;
-                        
-                        // Витягування джерел з Grounding Metadata
                         if (data.candidates[0].groundingMetadata && data.candidates[0].groundingMetadata.groundingAttributions) {
                             sources = data.candidates[0].groundingMetadata.groundingAttributions
                                 .filter(attr => attr.web && attr.web.uri)
-                                .map(attr => ({
-                                    uri: attr.web.uri,
-                                    title: attr.web.title || attr.web.uri
-                                }));
-                            
-                            // Видалення дублікатів посилань
+                                .map(attr => ({ uri: attr.web.uri, title: attr.web.title || attr.web.uri }));
                             sources = Array.from(new Map(sources.map(s => [s.uri, s])).values());
                         }
                     }
-                    
                     setAiInsights(prev => ({ ...prev, [item.id]: { text: textResult, sources: sources } }));
                 } catch (e) {
-                    setAiInsights(prev => ({ ...prev, [item.id]: { text: "⚠️ AI недоступний. Перевірте з'єднання.", sources: [] } }));
+                    console.error("AI Fetch Error:", e);
+                    setAiInsights(prev => ({ 
+                        ...prev, 
+                        [item.id]: { 
+                            text: "⚠️ AI недоступний. Перевірте з'єднання з інтернетом або переконайтеся, що ви вказали свій API-ключ Gemini у коді.", 
+                            sources: [] 
+                        } 
+                    }));
                 } finally {
                     setLoadingAi(prev => ({ ...prev, [item.id]: false }));
                 }
             };
 
+            const processedItems = useMemo(() => {
+                let result = [...items];
+                if (searchQuery) result = result.filter(i => i.name.toLowerCase().includes(searchQuery.toLowerCase()));
+                if (filterStatus === 'critical') {
+                    result = result.filter(i => {
+                        const m = calculateMetrics(i);
+                        return parseFloat(m.currentCoverage) < settings.minStock || (m.d1.before !== null && m.d1.before < 0) || (m.d2.before !== null && m.d2.before < 0) || (m.d3.before !== null && m.d3.before < 0);
+                    });
+                }
+                if (sortBy === 'covAsc') result.sort((a, b) => parseFloat(calculateMetrics(a).currentCoverage) - parseFloat(calculateMetrics(b).currentCoverage));
+                else if (sortBy === 'covDesc') result.sort((a, b) => parseFloat(calculateMetrics(b).currentCoverage) - parseFloat(calculateMetrics(a).currentCoverage));
+                return result;
+            }, [items, searchQuery, filterStatus, sortBy, reportDate, settings.minStock]);
+
+            const totalItems = items.length;
+            const criticalItems = items.filter(i => {
+                const m = calculateMetrics(i);
+                return parseFloat(m.currentCoverage) < settings.minStock || (m.d1.before !== null && m.d1.before < 0);
+            }).length;
+            const inTransitCount = items.filter(i => i.d1Qty > 0 || i.d2Qty > 0 || i.d3Qty > 0).length;
+
             return (
                 <div id="pdf-content" className="w-full min-h-screen">
                     
                     {/* ЗАКРІПЛЕНА ШАПКА */}
-                    <div className="sticky top-0 z-50 bg-white shadow-sm border-b border-slate-200 px-6 py-3 mb-6 w-full flex flex-col md:flex-row items-center justify-between gap-4 transition-all">
-                        
-                        {/* ЛІВА ЧАСТИНА: Лого та Назва */}
+                    <div className="sticky top-0 z-50 bg-white shadow-sm border-b border-slate-200 px-6 py-3 mb-4 w-full flex flex-col md:flex-row items-center justify-between gap-4 transition-all">
                         <div className="flex items-center gap-4 w-full md:w-auto justify-center md:justify-start shrink-0">
                             <img src="https://foodline-production.com/wp-content/uploads/2021/10/3752781497_3752781497.webp" alt="Foodline" className="h-10 w-auto object-contain"/>
                             <h1 className="text-[26px] font-black text-slate-800 tracking-tight">MRP Import</h1>
                         </div>
 
-                        {/* СЕРЕДНЯ ЧАСТИНА: Дані про оновлення та статус */}
                         <div className="flex items-center gap-6 text-[15px] text-slate-500 font-medium whitespace-nowrap w-full md:w-auto justify-center">
-                            <span>Дата/час оновлення даних: <strong className="text-slate-800">{lastUpdated}</strong></span>
+                            <span>Оновлено: <strong className="text-slate-800">{lastUpdated}</strong></span>
                             <span>Статус: <strong className={isImporting ? "text-blue-600" : "text-[#52b788]"}>{isImporting ? 'Оновлення...' : 'Синхронізовано'}</strong></span>
                             <span className="hidden print-only ml-4">Звіт згенеровано: <strong className="text-slate-800">{formatDisplayDate(reportDate)}</strong></span>
                         </div>
 
-                        {/* ПРАВА ЧАСТИНА: Вертикальні кнопки (одна під одною) - Зникають у PDF */}
                         <div className="flex flex-col items-center md:items-end gap-1.5 w-full md:w-56 shrink-0 no-print">
-                            <button onClick={() => handleLoadFromGoogle(false)} disabled={isImporting} className="flex justify-center items-center gap-2 w-full md:w-48 py-1.5 bg-white border border-slate-300 text-slate-700 font-bold rounded shadow-sm transition-all hover:bg-slate-50 disabled:opacity-70 text-sm">
-                                {isImporting ? <IconLoader className="w-4 h-4 animate-spin text-blue-600" /> : <IconRefresh className="w-4 h-4 text-blue-600" />}
-                                Синхронізувати
+                            <div className="flex gap-1.5 w-full">
+                                <button onClick={() => handleLoadFromGoogle(false)} disabled={isImporting} className="flex-1 flex justify-center items-center gap-1.5 py-1.5 bg-white border border-slate-300 text-slate-700 font-bold rounded shadow-sm hover:bg-slate-50 disabled:opacity-70 text-xs">
+                                    {isImporting ? <IconLoader className="w-3 h-3 animate-spin text-blue-600" /> : <IconRefresh className="w-3 h-3 text-blue-600" />}
+                                    Синхронізувати
+                                </button>
+                                <button onClick={() => setActiveTab(activeTab === 'settings' ? 'main' : 'settings')} className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-700 rounded shadow-sm transition-colors">
+                                    <IconSettings className="w-4 h-4 text-slate-600" />
+                                </button>
+                            </div>
+                            
+                            <button onClick={handleSaveToGoogle} disabled={isSaving} className="flex justify-center items-center gap-1.5 w-full py-1.5 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded shadow-sm transition-all disabled:opacity-70 text-xs">
+                                {isSaving ? <IconLoader className="w-3 h-3 animate-spin" /> : <IconSave className="w-3 h-3" />}
+                                Зберегти в Таблицю
                             </button>
-                            <button onClick={handleSavePDF} disabled={isImporting} className="flex justify-center items-center gap-2 w-full md:w-48 py-1.5 bg-blue-500 hover:bg-blue-600 text-white font-bold rounded shadow-sm transition-all disabled:opacity-70 text-sm">
-                                <IconPDF className="w-4 h-4" />
-                                Зберегти в PDF
-                            </button>
-                            <button onClick={handleAddItem} disabled={isImporting} className="flex justify-center items-center gap-2 w-full md:w-48 py-1.5 bg-[#52b788] hover:bg-[#40916c] text-white font-bold rounded shadow-sm transition-all disabled:opacity-70 text-sm">
-                                <IconPlus className="w-4 h-4" />
-                                Додати рядок
-                            </button>
+
+                            <div className="flex gap-1.5 w-full">
+                                <button onClick={handleSavePDF} className="flex-1 flex justify-center items-center gap-1.5 py-1.5 bg-blue-500 hover:bg-blue-600 text-white font-bold rounded shadow-sm transition-all text-[10px] uppercase">
+                                    <IconPDF className="w-3 h-3" /> PDF
+                                </button>
+                                <button onClick={handleAddItem} className="flex-[1.5] flex justify-center items-center gap-1.5 py-1.5 bg-[#52b788] hover:bg-[#40916c] text-white font-bold rounded shadow-sm transition-all text-[10px] uppercase">
+                                    <IconPlus className="w-3 h-3" /> Додати рядок
+                                </button>
+                            </div>
                         </div>
                     </div>
 
-                    <div className="w-full px-4 overflow-x-auto pb-10">
-                        {errorMsg && (
-                            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-start gap-2 shadow-sm mb-4 max-w-3xl mx-auto no-print">
-                                <IconAlert className="w-5 h-5 shrink-0 mt-0.5 text-red-500" />
-                                <p className="text-sm font-medium">{errorMsg}</p>
+                    {/* Вміст залежно від обраної вкладки */}
+                    {activeTab === 'settings' ? (
+                        <div className="max-w-2xl mx-auto mt-10 bg-white p-8 rounded-xl shadow-sm border border-slate-200">
+                            <h2 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2"><IconSettings className="w-5 h-5 text-orange-500" /> Налаштування логістики та запасів</h2>
+                            
+                            <h3 className="text-sm font-bold text-slate-700 uppercase mb-3 border-b pb-2">Логістичне плече (Дні)</h3>
+                            <div className="grid grid-cols-3 gap-4 mb-6">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 mb-1">Замовлення</label>
+                                    <input type="number" value={settings.order} onChange={e => setSettings({...settings, order: e.target.value})} className="w-full border rounded-lg px-3 py-2 text-slate-800 font-bold outline-none focus:border-orange-500 bg-slate-50" />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 mb-1">Дорога морем</label>
+                                    <input type="number" value={settings.sea} onChange={e => setSettings({...settings, sea: e.target.value})} className="w-full border rounded-lg px-3 py-2 text-slate-800 font-bold outline-none focus:border-orange-500 bg-slate-50" />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 mb-1">Порт та Митниця</label>
+                                    <input type="number" value={settings.port} onChange={e => setSettings({...settings, port: e.target.value})} className="w-full border rounded-lg px-3 py-2 text-slate-800 font-bold outline-none focus:border-orange-500 bg-slate-50" />
+                                </div>
                             </div>
-                        )}
+                            <div className="flex justify-between items-center mb-8 bg-orange-50 px-4 py-3 rounded-lg border border-orange-100">
+                                <span className="text-sm font-bold text-orange-800 uppercase">Загальний Lead Time:</span>
+                                <span className="text-xl font-black text-orange-600">{totalLeadTime} днів</span>
+                            </div>
 
-                        {isImporting && items.length === 0 ? (
-                            <div className="text-center p-12 bg-white rounded-lg border border-slate-200 text-slate-400 font-bold shadow-sm max-w-3xl mx-auto no-print">ЗАВАНТАЖЕННЯ ДАНИХ...</div>
-                        ) : (
-                            <div className="min-w-max flex flex-col gap-4 max-w-[1450px] mx-auto">
-                                {items.map((item) => {
-                                    const m = calculateMetrics(item);
-                                    const needsOrder = (m.d1.before !== null && m.d1.before < 0) || (m.d2.before !== null && m.d2.before < 0) || (m.d3.before !== null && m.d3.before < 0) || (parseFloat(m.currentCoverage) < 1 && item.consumption > 0);
-                                    
-                                    const insightObj = aiInsights[item.id];
-                                    const insightText = insightObj ? (typeof insightObj === 'string' ? insightObj : insightObj.text) : null;
-                                    const insightSources = insightObj && insightObj.sources ? insightObj.sources : [];
+                            <h3 className="text-sm font-bold text-slate-700 uppercase mb-3 border-b pb-2">Політика запасів (Місяці)</h3>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-xs font-bold text-orange-600 mb-1">Мінімальний запас (Safety Stock)</label>
+                                    <input type="number" step="0.1" value={settings.minStock} onChange={e => setSettings({...settings, minStock: e.target.value})} className="w-full border border-orange-200 rounded-lg px-3 py-2 text-slate-800 font-bold outline-none focus:border-orange-500 bg-orange-50/30" />
+                                    <p className="text-[10px] text-slate-500 mt-1">База: 1.5 - 2.0 міс.</p>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-purple-600 mb-1">Оверсток (Максимальний рівень)</label>
+                                    <input type="number" step="0.1" value={settings.overStock} onChange={e => setSettings({...settings, overStock: e.target.value})} className="w-full border border-purple-200 rounded-lg px-3 py-2 text-slate-800 font-bold outline-none focus:border-purple-500 bg-purple-50/30" />
+                                    <p className="text-[10px] text-slate-500 mt-1">База: 5.0 - 6.0 міс.</p>
+                                </div>
+                            </div>
 
-                                    return (
-                                        <div key={item.id} className={`bg-white rounded-xl shadow-sm border flex flex-col transition-all ${needsOrder ? 'border-red-300 ring-1 ring-red-100' : 'border-slate-200 hover:border-slate-300'}`}>
-                                            
-                                            {/* ЄДИНИЙ РЯДОК ДЛЯ ДЕСКТОПА */}
-                                            <div className="flex flex-row items-stretch">
+                            <button onClick={() => setActiveTab('main')} className="w-full mt-8 bg-slate-800 text-white font-bold py-3 rounded-lg hover:bg-slate-900 transition-colors">Повернутися до таблиці</button>
+                        </div>
+                    ) : (
+                        <div className="w-full px-4 overflow-x-auto pb-10">
+                            
+                            {/* ДАШБОРД ТА ПАНЕЛЬ ІНСТРУМЕНТІВ */}
+                            <div className="max-w-[1450px] mx-auto mb-6 flex flex-col md:flex-row justify-between items-end gap-4 no-print">
+                                <div className="flex gap-4">
+                                    <div className="bg-white px-4 py-2 border border-slate-200 rounded-lg shadow-sm">
+                                        <span className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider">Всього позицій</span>
+                                        <span className="text-xl font-black text-slate-700">{totalItems}</span>
+                                    </div>
+                                    <div className="bg-red-50 px-4 py-2 border border-red-100 rounded-lg shadow-sm">
+                                        <span className="block text-[10px] text-red-400 font-bold uppercase tracking-wider">Дефіцит / Критичні</span>
+                                        <span className="text-xl font-black text-red-600">{criticalItems}</span>
+                                    </div>
+                                    <div className="bg-blue-50 px-4 py-2 border border-blue-100 rounded-lg shadow-sm">
+                                        <span className="block text-[10px] text-blue-400 font-bold uppercase tracking-wider">Товари в дорозі</span>
+                                        <span className="text-xl font-black text-blue-600">{inTransitCount}</span>
+                                    </div>
+                                </div>
+                                <div className="flex gap-2">
+                                    <div className="relative">
+                                        <IconSearch className="absolute left-2.5 top-2.5 w-4 h-4 text-slate-400" />
+                                        <input type="text" placeholder="Пошук..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-8 pr-3 py-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:border-emerald-500 shadow-sm w-48" />
+                                    </div>
+                                    <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-emerald-500 shadow-sm font-medium text-slate-600">
+                                        <option value="all">Всі статуси</option>
+                                        <option value="critical">Тільки Критичні</option>
+                                    </select>
+                                    <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-emerald-500 shadow-sm font-medium text-slate-600">
+                                        <option value="default">Сортування: За замовчуванням</option>
+                                        <option value="covAsc">Покриття: Від меншого</option>
+                                        <option value="covDesc">Покриття: Від більшого</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            {errorMsg && (
+                                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-start gap-2 shadow-sm mb-4 max-w-3xl mx-auto no-print">
+                                    <IconAlert className="w-5 h-5 shrink-0 mt-0.5 text-red-500" />
+                                    <p className="text-sm font-medium">{errorMsg}</p>
+                                </div>
+                            )}
+
+                            {isImporting && items.length === 0 ? (
+                                <div className="text-center p-12 bg-white rounded-lg border border-slate-200 text-slate-400 font-bold shadow-sm max-w-3xl mx-auto no-print">ЗАВАНТАЖЕННЯ ДАНИХ...</div>
+                            ) : (
+                                <div className="min-w-max flex flex-col gap-4 max-w-[1450px] mx-auto">
+                                    {processedItems.map((item) => {
+                                        const m = calculateMetrics(item);
+                                        const needsOrder = (m.d1.before !== null && m.d1.before < 0) || (m.d2.before !== null && m.d2.before < 0) || (m.d3.before !== null && m.d3.before < 0) || (parseFloat(m.currentCoverage) < settings.minStock && item.consumption > 0);
+                                        
+                                        const insightObj = aiInsights[item.id];
+                                        const insightText = insightObj ? (typeof insightObj === 'string' ? insightObj : insightObj.text) : null;
+                                        const insightSources = insightObj && insightObj.sources ? insightObj.sources : [];
+
+                                        return (
+                                            <div key={item.id} className={`bg-white rounded-xl shadow-sm border flex flex-col transition-all ${needsOrder ? 'border-orange-300 ring-1 ring-orange-100' : 'border-slate-200 hover:border-slate-300'}`}>
                                                 
-                                                {/* ЛІВА ЧАСТИНА: БАЗОВА ІНФО */}
-                                                <div className="flex flex-col justify-between p-4 border-r border-slate-200 w-[550px] shrink-0 bg-slate-50/50">
+                                                <div className="flex flex-row items-stretch">
                                                     
-                                                    <div className="mb-4 flex gap-2">
-                                                        <div className="flex-1 min-w-0">
-                                                            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 pl-1">Номенклатура</label>
-                                                            <input type="text" value={item.name} onChange={(e) => handleChange(item.id, 'name', e.target.value)} className="w-full font-bold text-slate-800 bg-white border border-slate-200 rounded-lg px-3 py-2 text-[14px] focus:ring-1 focus:ring-emerald-500 outline-none shadow-sm transition-shadow" />
-                                                        </div>
-                                                        <button onClick={() => handleRemoveItem(item.id)} className="no-print text-slate-400 hover:text-red-500 bg-white p-2 mt-5 rounded-lg border border-slate-200 shadow-sm transition-colors shrink-0 h-[38px] w-[38px] flex items-center justify-center">
-                                                            <IconTrash className="w-4 h-4" />
-                                                        </button>
-                                                    </div>
-                                                    
-                                                    <div className="flex items-center gap-3">
-                                                        <div className="flex-1 min-w-0">
-                                                            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 pl-1 truncate">Залишок (шт)</label>
-                                                            <input type="number" value={item.stock} onChange={(e) => handleChange(item.id, 'stock', e.target.value)} className="w-full font-bold text-slate-800 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-[14px] focus:ring-1 focus:ring-emerald-500 outline-none shadow-sm transition-shadow" />
-                                                        </div>
-                                                        <div className="flex-1 min-w-0">
-                                                            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 pl-1 truncate">Витрата/міс</label>
-                                                            <input type="number" value={item.consumption} onChange={(e) => handleChange(item.id, 'consumption', e.target.value)} className="w-full font-bold text-slate-800 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-[14px] focus:ring-1 focus:ring-emerald-500 outline-none shadow-sm transition-shadow" />
-                                                        </div>
-                                                        <div className="w-[85px] shrink-0 flex flex-col justify-center items-center pt-2">
-                                                            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-1">Покриття:</span>
-                                                            <span className={`text-[16px] font-black leading-none ${parseFloat(m.currentCoverage) < 1 ? 'text-red-600' : 'text-[#52b788]'}`}>
-                                                                {m.currentCoverage} <span className="text-[11px] font-bold">міс.</span>
-                                                            </span>
-                                                        </div>
+                                                    {/* ЛІВА ЧАСТИНА: БАЗОВА ІНФО ТА КНОПКИ */}
+                                                    <div className="flex flex-col justify-between p-4 border-r border-slate-200 w-[550px] shrink-0 bg-slate-50/50 relative">
+                                                        {/* Маркер дефіциту */}
+                                                        {needsOrder && <div className="absolute top-0 left-0 w-1 h-full bg-orange-400 rounded-l-xl"></div>}
                                                         
-                                                        <div className="flex flex-col gap-2 shrink-0 ml-1 pt-4 no-print">
-                                                            <button onClick={() => handleAiAnalysis(item, m)} disabled={loadingAi[item.id]} className="bg-[#7c3aed] hover:bg-[#6d28d9] text-white px-3 py-1.5 rounded-lg text-[10px] font-bold flex gap-1.5 items-center justify-center transition-all shadow-sm disabled:opacity-50">
-                                                                {loadingAi[item.id] ? <IconLoader className="animate-spin w-3 h-3" /> : <IconSparkles className="w-3 h-3" />}
-                                                                AI Аналіз
+                                                        <div className="mb-4 flex gap-2 ml-1">
+                                                            <div className="flex-1 min-w-0">
+                                                                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 pl-1">Номенклатура</label>
+                                                                <input type="text" value={item.name} onChange={(e) => handleChange(item.id, 'name', e.target.value)} className="w-full font-bold text-slate-800 bg-white border border-slate-200 rounded-lg px-3 py-2 text-[14px] focus:ring-1 focus:ring-emerald-500 outline-none shadow-sm transition-shadow" />
+                                                            </div>
+                                                            <button onClick={() => handleRemoveItem(item.id)} className="no-print text-slate-400 hover:text-red-500 bg-white p-2 mt-5 rounded-lg border border-slate-200 shadow-sm transition-colors shrink-0 h-[38px] w-[38px] flex items-center justify-center">
+                                                                <IconTrash className="w-4 h-4" />
                                                             </button>
                                                         </div>
-                                                    </div>
-                                                </div>
-
-                                                {/* ПРАВА ЧАСТИНА: 3 ДОСТАВКИ */}
-                                                <div className="flex flex-1 divide-x divide-slate-100 bg-white">
-                                                    <DeliveryItem num={1} m={m.d1} sendDate={item.d1Send} date={item.d1Date} qty={item.d1Qty} formatNum={formatNum} handleChange={handleChange} itemId={item.id} />
-                                                    <DeliveryItem num={2} m={m.d2} sendDate={item.d2Send} date={item.d2Date} qty={item.d2Qty} formatNum={formatNum} handleChange={handleChange} itemId={item.id} />
-                                                    <DeliveryItem num={3} m={m.d3} sendDate={item.d3Send} date={item.d3Date} qty={item.d3Qty} formatNum={formatNum} handleChange={handleChange} itemId={item.id} />
-                                                </div>
-                                            </div>
-
-                                            {/* НИЖНЯ ЧАСТИНА: AI РЕЗУЛЬТАТ З ДЖЕРЕЛАМИ */}
-                                            {insightText && (
-                                                <div className="p-5 bg-purple-50 text-sm text-purple-900 border-t border-purple-200 flex items-start gap-4">
-                                                    <IconInfo className="w-6 h-6 shrink-0 text-purple-600 mt-0.5" />
-                                                    <div className="flex-1 min-w-0">
-                                                        <div className="whitespace-pre-wrap font-medium leading-relaxed text-[13px]">{insightText}</div>
                                                         
-                                                        {insightSources.length > 0 && (
-                                                            <div className="mt-4 pt-3 border-t border-purple-200/60 no-print">
-                                                                <span className="text-[10px] font-bold text-purple-700 uppercase tracking-widest block mb-2">Джерела (Актуальні посилання):</span>
-                                                                <div className="flex flex-wrap gap-2">
-                                                                    {insightSources.map((src, idx) => (
-                                                                        <a key={idx} href={src.uri} target="_blank" rel="noopener noreferrer" 
-                                                                           className="text-[11px] text-blue-700 hover:text-blue-900 underline bg-white/60 px-2.5 py-1.5 rounded-md border border-purple-200 shadow-sm truncate max-w-full inline-block transition-colors" 
-                                                                           title={src.title}>
-                                                                            🔗 {src.title}
-                                                                        </a>
-                                                                    ))}
-                                                                </div>
+                                                        <div className="flex items-center gap-3 ml-1">
+                                                            <div className="flex-1 min-w-0">
+                                                                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 pl-1 truncate">Залишок (шт)</label>
+                                                                <input type="number" value={item.stock} onChange={(e) => handleChange(item.id, 'stock', e.target.value)} className="w-full font-bold text-slate-800 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-[14px] focus:ring-1 focus:ring-emerald-500 outline-none shadow-sm transition-shadow" />
                                                             </div>
-                                                        )}
+                                                            <div className="flex-1 min-w-0">
+                                                                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 pl-1 truncate">Витрата/міс</label>
+                                                                <input type="number" value={item.consumption} onChange={(e) => handleChange(item.id, 'consumption', e.target.value)} className="w-full font-bold text-slate-800 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-[14px] focus:ring-1 focus:ring-emerald-500 outline-none shadow-sm transition-shadow" />
+                                                            </div>
+                                                            <div className="w-[85px] shrink-0 flex flex-col justify-center items-center pt-2">
+                                                                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-1">Покриття:</span>
+                                                                <span className={`text-[16px] font-black leading-none ${parseFloat(m.currentCoverage) < settings.minStock ? 'text-orange-600' : 'text-[#52b788]'}`}>
+                                                                    {m.currentCoverage} <span className="text-[11px] font-bold">міс.</span>
+                                                                </span>
+                                                            </div>
+                                                            
+                                                            {/* ОКРЕМІ КНОПКИ ДЛЯ ГРАФІКУ ТА ШІ */}
+                                                            <div className="flex flex-col gap-1.5 shrink-0 ml-1 pt-4 no-print">
+                                                                <button onClick={() => toggleChart(item.id)} className={`${expandedChart[item.id] ? 'bg-blue-100 text-blue-800 border-blue-200' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'} px-2.5 py-1 rounded-lg text-[10px] font-bold flex gap-1.5 items-center justify-center transition-all shadow-sm border`}>
+                                                                    <IconChart className="w-3.5 h-3.5 text-blue-500" /> Графік
+                                                                </button>
+                                                                <button onClick={() => handleAiAnalysis(item, m)} disabled={loadingAi[item.id]} className="bg-[#7c3aed] hover:bg-[#6d28d9] text-white px-2.5 py-1 rounded-lg text-[10px] font-bold flex gap-1.5 items-center justify-center transition-all shadow-sm disabled:opacity-50">
+                                                                    {loadingAi[item.id] ? <IconLoader className="animate-spin w-3 h-3" /> : <IconSparkles className="w-3 h-3" />}
+                                                                    AI Аналіз
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* ПРАВА ЧАСТИНА: 3 ДОСТАВКИ */}
+                                                    <div className="flex flex-1 divide-x divide-slate-100 bg-white">
+                                                        <DeliveryItem num={1} m={m.d1} sendDate={item.d1Send} date={item.d1Date} qty={item.d1Qty} cont={item.d1Cont} formatNum={formatNum} handleChange={handleChange} itemId={item.id} />
+                                                        <DeliveryItem num={2} m={m.d2} sendDate={item.d2Send} date={item.d2Date} qty={item.d2Qty} cont={item.d2Cont} formatNum={formatNum} handleChange={handleChange} itemId={item.id} />
+                                                        <DeliveryItem num={3} m={m.d3} sendDate={item.d3Send} date={item.d3Date} qty={item.d3Qty} cont={item.d3Cont} formatNum={formatNum} handleChange={handleChange} itemId={item.id} />
                                                     </div>
                                                 </div>
-                                            )}
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        )}
-                    </div>
+
+                                                {/* АКОРДЕОН: ГРАФІК НА ВСЮ ШИРИНУ */}
+                                                <div className={`accordion-content bg-slate-50/50 border-slate-200 ${expandedChart[item.id] ? 'border-t accordion-expanded' : 'accordion-collapsed'}`}>
+                                                    <div className="p-5">
+                                                        <StockChart item={item} metrics={m} todayStr={reportDate} minMonths={settings.minStock} overMonths={settings.overStock} />
+                                                    </div>
+                                                </div>
+
+                                                {/* АКОРДЕОН: AI АНАЛІЗ */}
+                                                <div className={`accordion-content bg-purple-50/50 border-slate-200 ${expandedAi[item.id] ? 'border-t accordion-expanded' : 'accordion-collapsed'}`}>
+                                                    <div className="p-6">
+                                                        <div className="flex items-start gap-4">
+                                                            <div className="bg-white p-2 rounded-full shadow-sm border border-purple-100 shrink-0">
+                                                                <IconSparkles className="w-6 h-6 text-purple-600" />
+                                                            </div>
+                                                            <div className="flex-1 min-w-0">
+                                                                {loadingAi[item.id] ? (
+                                                                    <div className="text-sm font-medium text-purple-800 flex items-center gap-2 py-2">
+                                                                        <IconLoader className="w-5 h-5 animate-spin" /> ШІ збирає та аналізує логістичні дані...
+                                                                    </div>
+                                                                ) : insightText ? (
+                                                                    <>
+                                                                        <div className="whitespace-pre-wrap font-medium leading-relaxed text-[13.5px] text-slate-800 bg-white p-5 rounded-lg border border-purple-100 shadow-sm">
+                                                                            {insightText}
+                                                                        </div>
+                                                                        {insightSources.length > 0 && (
+                                                                            <div className="mt-4 pt-3 no-print">
+                                                                                <span className="text-[10px] font-bold text-purple-700 uppercase tracking-widest block mb-2">Джерела (Актуальні посилання):</span>
+                                                                                <div className="flex flex-wrap gap-2">
+                                                                                    {insightSources.map((src, idx) => (
+                                                                                        <a key={idx} href={src.uri} target="_blank" rel="noopener noreferrer" 
+                                                                                           className="text-[11px] text-blue-700 hover:text-blue-900 underline bg-white px-3 py-1.5 rounded-md border border-purple-200 shadow-sm truncate max-w-full inline-block transition-colors" 
+                                                                                           title={src.title}>
+                                                                                            🔗 {src.title}
+                                                                                        </a>
+                                                                                    ))}
+                                                                                </div>
+                                                                            </div>
+                                                                        )}
+                                                                    </>
+                                                                ) : (
+                                                                    <div className="text-sm font-medium text-slate-500 italic py-2">Натисніть кнопку "AI Аналіз", щоб згенерувати звіт.</div>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </div>
             );
         }
 
-        function DeliveryItem({ num, m, sendDate, date, qty, formatNum, handleChange, itemId }) {
+        function DeliveryItem({ num, m, sendDate, date, qty, cont, formatNum, handleChange, itemId }) {
             const isDeficitBefore = m.before !== null && m.before < 0;
             
             let transitDays = '-';
@@ -483,34 +777,35 @@
             return (
                 <div className="p-4 w-[330px] shrink-0 flex flex-col justify-between relative hover:bg-slate-50 transition-colors">
                     
-                    {/* Хедер доставки */}
-                    <div className="flex justify-between items-start mb-4">
+                    <div className="flex justify-between items-start mb-3">
                         <div className="flex items-center gap-2">
                             <span className="bg-slate-100 text-slate-500 rounded-full w-5 h-5 flex items-center justify-center text-[10px] font-black border border-slate-200">{num}</span>
                             <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Доставка</span>
                         </div>
                         {sendDate && date && transitDays !== '-' && (
-                            <span className="text-[11px] font-bold text-blue-600">У дорозі: {transitDays} дн.</span>
+                            <span className="text-[11px] font-bold text-orange-600 bg-orange-50 px-2 py-0.5 rounded border border-orange-100">У дорозі: {transitDays} дн.</span>
                         )}
                     </div>
 
-                    {/* Інпути з min-w-0 для уникнення перекриття. Розширено контейнери для великих чисел */}
-                    <div className="flex gap-2 mb-4">
+                    <div className="flex gap-2 mb-2">
                         <div className="w-[95px] shrink-0">
                             <label className="block text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1 pl-1 truncate">Відправка</label>
-                            <input type="date" value={sendDate || ''} onChange={e => handleChange(itemId, `d${num}Send`, e.target.value)} className="w-full text-[10px] font-bold border border-slate-200 rounded px-1.5 py-1.5 focus:ring-1 focus:ring-[#52b788] outline-none text-slate-700 shadow-sm" />
+                            <input type="date" value={sendDate || ''} onChange={e => handleChange(itemId, `d${num}Send`, e.target.value)} className="w-full text-[10px] font-bold border border-slate-200 rounded px-1.5 py-1.5 focus:ring-1 focus:ring-orange-500 outline-none text-slate-700 shadow-sm" />
                         </div>
                         <div className="w-[95px] shrink-0">
                             <label className="block text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1 pl-1 truncate">Прибуття</label>
-                            <input type="date" value={date || ''} onChange={e => handleChange(itemId, `d${num}Date`, e.target.value)} className="w-full text-[10px] font-bold border border-slate-200 rounded px-1.5 py-1.5 focus:ring-1 focus:ring-[#52b788] outline-none text-slate-700 shadow-sm" />
+                            <input type="date" value={date || ''} onChange={e => handleChange(itemId, `d${num}Date`, e.target.value)} className="w-full text-[10px] font-bold border border-slate-200 rounded px-1.5 py-1.5 focus:ring-1 focus:ring-orange-500 outline-none text-slate-700 shadow-sm" />
                         </div>
                         <div className="flex-1 min-w-0">
                             <label className="block text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1 pl-1 truncate">Кількість (шт)</label>
-                            <input type="number" value={qty || ''} onChange={e => handleChange(itemId, `d${num}Qty`, e.target.value)} placeholder="0" className="w-full text-[12px] font-bold border border-slate-200 rounded px-2 py-1.5 focus:ring-1 focus:ring-[#52b788] outline-none text-blue-600 shadow-sm" />
+                            <input type="number" value={qty || ''} onChange={e => handleChange(itemId, `d${num}Qty`, e.target.value)} placeholder="0" className="w-full text-[12px] font-bold border border-slate-200 rounded px-2 py-1.5 focus:ring-1 focus:ring-orange-500 outline-none text-blue-600 shadow-sm" />
                         </div>
                     </div>
 
-                    {/* Блок розрахунків */}
+                    <div className="w-full mb-3">
+                        <input type="text" value={cont || ''} onChange={e => handleChange(itemId, `d${num}Cont`, e.target.value)} placeholder="Контейнер №..." className="w-full text-[10px] font-bold border border-slate-200 rounded px-2 py-1.5 focus:ring-1 focus:ring-orange-500 outline-none text-slate-600 shadow-sm" />
+                    </div>
+
                     <div className="mt-auto grid grid-cols-[auto_1fr] gap-y-2 items-center px-1 pt-1 border-t border-slate-100">
                         <span className="text-[11px] text-slate-500 font-medium">За 1 день до:</span>
                         <div className="text-right truncate">
