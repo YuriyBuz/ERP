@@ -12,10 +12,11 @@
     <!-- Підключаємо TailwindCSS для стилів -->
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- Підключаємо React та Babel -->
+    <!-- Підключаємо React, Babel та html2pdf для генерації PDF -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
     <style>
         /* Кастомний скролбар для зручності горизонтальної прокрутки */
@@ -30,6 +31,30 @@
         
         /* Ущільнюємо стандартні іконки календаря для дати */
         input[type="date"]::-webkit-calendar-picker-indicator { margin-left: -2px; padding: 0px; cursor: pointer; }
+
+        /* Стилі спеціально для правильного експорту в PDF */
+        .pdf-exporting {
+            width: 1550px !important;
+            background-color: #f8fafc !important;
+            padding-bottom: 20px !important;
+        }
+        .pdf-exporting .overflow-x-auto {
+            overflow: visible !important;
+        }
+        .pdf-exporting .sticky {
+            position: relative !important;
+            box-shadow: none !important;
+            border-bottom: 1px solid #e2e8f0 !important;
+        }
+        .pdf-exporting .no-print {
+            display: none !important;
+        }
+        .pdf-exporting input {
+            border: none !important;
+            background: transparent !important;
+            padding: 0 !important;
+            box-shadow: none !important;
+        }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-800 font-sans pb-20">
@@ -46,11 +71,10 @@
         const IconLoader = ({className="w-4 h-4"}) => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="22" y2="12"></line><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line></svg>;
         const IconRefresh = ({className="w-4 h-4"}) => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21 2v6h-6"></path><path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path><path d="M3 22v-6h6"></path><path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path></svg>;
         const IconInfo = ({className="w-4 h-4"}) => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>;
+        const IconPDF = ({className="w-4 h-4"}) => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>;
 
         function App() {
-            // Сьогоднішня дата для розрахунків
-            const reportDate = new Date().toISOString().split('T')[0]; 
-            
+            const [reportDate, setReportDate] = useState(new Date().toISOString().split('T')[0]); 
             const [items, setItems] = useState([]);
             const [isImporting, setIsImporting] = useState(true);
             const [errorMsg, setErrorMsg] = useState("");
@@ -92,6 +116,13 @@
                 return Math.round(val).toLocaleString('uk-UA');
             };
 
+            const formatDisplayDate = (dString) => {
+                if (!dString) return '';
+                const parts = dString.split('-');
+                if (parts.length === 3) return `${parts[2]}.${parts[1]}.${parts[0]}`;
+                return dString;
+            };
+
             const handleLoadFromGoogle = (isInitialLoad = false) => {
                 setIsImporting(true);
                 setErrorMsg("");
@@ -130,7 +161,6 @@
 
                         setItems(parsedItems);
                         
-                        // Формат дати: 05.04.2026 12:23
                         const now = new Date();
                         const dd = String(now.getDate()).padStart(2, '0');
                         const mm = String(now.getMonth() + 1).padStart(2, '0');
@@ -212,37 +242,94 @@
                 setItems(items.filter(item => item.id !== id));
             };
 
+            const handleSavePDF = () => {
+                const element = document.getElementById('pdf-content');
+                element.classList.add('pdf-exporting');
+                
+                const opt = {
+                    margin:       10,
+                    filename:     `mrp_report_${formatDisplayDate(reportDate)}.pdf`,
+                    image:        { type: 'jpeg', quality: 0.98 },
+                    html2canvas:  { scale: 2, useCORS: true, windowWidth: 1550 },
+                    jsPDF:        { unit: 'mm', format: 'a3', orientation: 'landscape' }
+                };
+                
+                html2pdf().set(opt).from(element).save().then(() => {
+                    element.classList.remove('pdf-exporting');
+                });
+            };
+
             const handleAiAnalysis = async (item, metrics) => {
                 setLoadingAi(prev => ({ ...prev, [item.id]: true }));
                 const apiKey = ""; 
                 const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
                 
-                const prompt = `Ти - досвідчений Supply Chain Manager.
-                Всі товари доставляються з Китаю. Загальний цикл логістики: ~110 днів.
-                Проаналізуй SKU: "${item.name}".
-                - Залишок: ${item.stock} шт. 
-                - Витрата: ${item.consumption} шт/міс.
-                - Поточне покриття: ${metrics.currentCoverage} міс.
-                Очікувані залишки ДО прибуття запланованих поставок (за 1 день до): 
-                №1: ${metrics.d1.before !== null ? Math.round(metrics.d1.before) : '-'} шт, 
-                №2: ${metrics.d2.before !== null ? Math.round(metrics.d2.before) : '-'} шт.
-                Завдання: Враховуючи плече у 110 днів, оціни чи є зараз ризик дефіциту. Дай чітку рекомендацію щодо замовлення. Дай відповідь коротко, списком, українською мовою.`;
+                const prompt = `Ти - досвідчений експерт з логістики (Supply Chain Manager) та ризик-аналітик.
+                Маршрут постачання: Виробництво в Китаї -> Доставка морем -> Транзит через Польщу -> Митне оформлення -> Склад в Україні.
+                Загальний цикл логістики (Lead Time): ~110 днів.
+
+                Проаналізуй позицію: "${item.name}". 
+                Дата розрахунку: ${formatDisplayDate(reportDate)}.
+                - Поточний залишок: ${item.stock} шт. (покриття: ${metrics.currentCoverage} міс.)
+                - Швидкість витрати: ${item.consumption} шт/міс.
+                - Очікувані залишки ЗА 1 ДЕНЬ ДО прибуття запланованих поставок: 
+                  Поставка №1: ${metrics.d1.before !== null ? Math.round(metrics.d1.before) : '-'} шт.
+                  Поставка №2: ${metrics.d2.before !== null ? Math.round(metrics.d2.before) : '-'} шт.
+                  Поставка №3: ${metrics.d3.before !== null ? Math.round(metrics.d3.before) : '-'} шт.
+
+                Твоє завдання:
+                1. Оцінити ризик виникнення дефіциту товару на складі з огляду на математику залишків (проаналізуй всі 3 поставки).
+                2. Оцінити глобальні логістичні ризики, використавши пошук Google. Шукай актуальну інформацію про:
+                   - Політичні, економічні та військові чинники (ситуація в Червоному морі/Суеці, страйки європейських перевізників, ситуація на кордоні з Польщею, ризики в Україні).
+                   - Кліматичні фактори (шторми, тайфуни в Азії).
+                   - Релігійні та державні свята (святкові дні в Китаї, ЄС, Україні).
+                3. Дати чіткі рекомендації: коли робити замовлення і які обсяги буферного запасу (Safety Stock) варто закласти.
+                
+                Відповідь має бути професійною, структурованою (марковані списки), короткою і по суті. ОБОВ'ЯЗКОВО спирайся на знайдений фактаж. Мова: українська.`;
 
                 try {
-                    const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }) });
+                    const response = await fetch(url, { 
+                        method: 'POST', 
+                        headers: { 'Content-Type': 'application/json' }, 
+                        body: JSON.stringify({ 
+                            contents: [{ parts: [{ text: prompt }] }],
+                            tools: [{ google_search: {} }] // Увімкнення Grounding для пошуку актуальних подій
+                        }) 
+                    });
                     const data = await response.json();
-                    setAiInsights(prev => ({ ...prev, [item.id]: data.candidates?.[0]?.content?.parts?.[0]?.text || "Помилка відповіді." }));
+                    
+                    let textResult = "Помилка відповіді.";
+                    let sources = [];
+
+                    if (data.candidates && data.candidates.length > 0) {
+                        textResult = data.candidates[0].content.parts[0].text;
+                        
+                        // Витягування джерел з Grounding Metadata
+                        if (data.candidates[0].groundingMetadata && data.candidates[0].groundingMetadata.groundingAttributions) {
+                            sources = data.candidates[0].groundingMetadata.groundingAttributions
+                                .filter(attr => attr.web && attr.web.uri)
+                                .map(attr => ({
+                                    uri: attr.web.uri,
+                                    title: attr.web.title || attr.web.uri
+                                }));
+                            
+                            // Видалення дублікатів посилань
+                            sources = Array.from(new Map(sources.map(s => [s.uri, s])).values());
+                        }
+                    }
+                    
+                    setAiInsights(prev => ({ ...prev, [item.id]: { text: textResult, sources: sources } }));
                 } catch (e) {
-                    setAiInsights(prev => ({ ...prev, [item.id]: "⚠️ AI недоступний." }));
+                    setAiInsights(prev => ({ ...prev, [item.id]: { text: "⚠️ AI недоступний. Перевірте з'єднання.", sources: [] } }));
                 } finally {
                     setLoadingAi(prev => ({ ...prev, [item.id]: false }));
                 }
             };
 
             return (
-                <div className="w-full">
+                <div id="pdf-content" className="w-full min-h-screen">
                     
-                    {/* ЗАКРІПЛЕНА ШАПКА (ТОЧНО ПО СКРІНШОТУ) */}
+                    {/* ЗАКРІПЛЕНА ШАПКА */}
                     <div className="sticky top-0 z-50 bg-white shadow-sm border-b border-slate-200 px-6 py-3 mb-6 w-full flex flex-col md:flex-row items-center justify-between gap-4 transition-all">
                         
                         {/* ЛІВА ЧАСТИНА: Лого та Назва */}
@@ -255,13 +342,18 @@
                         <div className="flex items-center gap-6 text-[15px] text-slate-500 font-medium whitespace-nowrap w-full md:w-auto justify-center">
                             <span>Дата/час оновлення даних: <strong className="text-slate-800">{lastUpdated}</strong></span>
                             <span>Статус: <strong className={isImporting ? "text-blue-600" : "text-[#52b788]"}>{isImporting ? 'Оновлення...' : 'Синхронізовано'}</strong></span>
+                            <span className="hidden print-only ml-4">Звіт згенеровано: <strong className="text-slate-800">{formatDisplayDate(reportDate)}</strong></span>
                         </div>
 
-                        {/* ПРАВА ЧАСТИНА: Вертикальні кнопки (одна під одною) */}
-                        <div className="flex flex-col items-center md:items-end gap-1.5 w-full md:w-56 shrink-0">
+                        {/* ПРАВА ЧАСТИНА: Вертикальні кнопки (одна під одною) - Зникають у PDF */}
+                        <div className="flex flex-col items-center md:items-end gap-1.5 w-full md:w-56 shrink-0 no-print">
                             <button onClick={() => handleLoadFromGoogle(false)} disabled={isImporting} className="flex justify-center items-center gap-2 w-full md:w-48 py-1.5 bg-white border border-slate-300 text-slate-700 font-bold rounded shadow-sm transition-all hover:bg-slate-50 disabled:opacity-70 text-sm">
                                 {isImporting ? <IconLoader className="w-4 h-4 animate-spin text-blue-600" /> : <IconRefresh className="w-4 h-4 text-blue-600" />}
                                 Синхронізувати
+                            </button>
+                            <button onClick={handleSavePDF} disabled={isImporting} className="flex justify-center items-center gap-2 w-full md:w-48 py-1.5 bg-blue-500 hover:bg-blue-600 text-white font-bold rounded shadow-sm transition-all disabled:opacity-70 text-sm">
+                                <IconPDF className="w-4 h-4" />
+                                Зберегти в PDF
                             </button>
                             <button onClick={handleAddItem} disabled={isImporting} className="flex justify-center items-center gap-2 w-full md:w-48 py-1.5 bg-[#52b788] hover:bg-[#40916c] text-white font-bold rounded shadow-sm transition-all disabled:opacity-70 text-sm">
                                 <IconPlus className="w-4 h-4" />
@@ -272,20 +364,24 @@
 
                     <div className="w-full px-4 overflow-x-auto pb-10">
                         {errorMsg && (
-                            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-start gap-2 shadow-sm mb-4 max-w-3xl mx-auto">
+                            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-start gap-2 shadow-sm mb-4 max-w-3xl mx-auto no-print">
                                 <IconAlert className="w-5 h-5 shrink-0 mt-0.5 text-red-500" />
                                 <p className="text-sm font-medium">{errorMsg}</p>
                             </div>
                         )}
 
                         {isImporting && items.length === 0 ? (
-                            <div className="text-center p-12 bg-white rounded-lg border border-slate-200 text-slate-400 font-bold shadow-sm max-w-3xl mx-auto">ЗАВАНТАЖЕННЯ ДАНИХ...</div>
+                            <div className="text-center p-12 bg-white rounded-lg border border-slate-200 text-slate-400 font-bold shadow-sm max-w-3xl mx-auto no-print">ЗАВАНТАЖЕННЯ ДАНИХ...</div>
                         ) : (
                             <div className="min-w-max flex flex-col gap-4 max-w-[1450px] mx-auto">
                                 {items.map((item) => {
                                     const m = calculateMetrics(item);
                                     const needsOrder = (m.d1.before !== null && m.d1.before < 0) || (m.d2.before !== null && m.d2.before < 0) || (m.d3.before !== null && m.d3.before < 0) || (parseFloat(m.currentCoverage) < 1 && item.consumption > 0);
                                     
+                                    const insightObj = aiInsights[item.id];
+                                    const insightText = insightObj ? (typeof insightObj === 'string' ? insightObj : insightObj.text) : null;
+                                    const insightSources = insightObj && insightObj.sources ? insightObj.sources : [];
+
                                     return (
                                         <div key={item.id} className={`bg-white rounded-xl shadow-sm border flex flex-col transition-all ${needsOrder ? 'border-red-300 ring-1 ring-red-100' : 'border-slate-200 hover:border-slate-300'}`}>
                                             
@@ -293,21 +389,26 @@
                                             <div className="flex flex-row items-stretch">
                                                 
                                                 {/* ЛІВА ЧАСТИНА: БАЗОВА ІНФО */}
-                                                <div className="flex flex-col justify-between p-4 border-r border-slate-200 w-[420px] shrink-0">
+                                                <div className="flex flex-col justify-between p-4 border-r border-slate-200 w-[550px] shrink-0 bg-slate-50/50">
                                                     
-                                                    <div className="mb-4">
-                                                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 pl-1">Номенклатура</label>
-                                                        <input type="text" value={item.name} onChange={(e) => handleChange(item.id, 'name', e.target.value)} className="w-full font-bold text-slate-800 bg-white border border-slate-200 rounded px-3 py-2 text-[14px] focus:ring-1 focus:ring-emerald-500 outline-none shadow-sm transition-shadow" />
+                                                    <div className="mb-4 flex gap-2">
+                                                        <div className="flex-1 min-w-0">
+                                                            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 pl-1">Номенклатура</label>
+                                                            <input type="text" value={item.name} onChange={(e) => handleChange(item.id, 'name', e.target.value)} className="w-full font-bold text-slate-800 bg-white border border-slate-200 rounded-lg px-3 py-2 text-[14px] focus:ring-1 focus:ring-emerald-500 outline-none shadow-sm transition-shadow" />
+                                                        </div>
+                                                        <button onClick={() => handleRemoveItem(item.id)} className="no-print text-slate-400 hover:text-red-500 bg-white p-2 mt-5 rounded-lg border border-slate-200 shadow-sm transition-colors shrink-0 h-[38px] w-[38px] flex items-center justify-center">
+                                                            <IconTrash className="w-4 h-4" />
+                                                        </button>
                                                     </div>
                                                     
                                                     <div className="flex items-center gap-3">
                                                         <div className="flex-1 min-w-0">
                                                             <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 pl-1 truncate">Залишок (шт)</label>
-                                                            <input type="number" value={item.stock} onChange={(e) => handleChange(item.id, 'stock', e.target.value)} className="w-full font-bold text-slate-800 bg-white border border-slate-200 rounded px-2.5 py-1.5 text-[14px] focus:ring-1 focus:ring-emerald-500 outline-none shadow-sm transition-shadow" />
+                                                            <input type="number" value={item.stock} onChange={(e) => handleChange(item.id, 'stock', e.target.value)} className="w-full font-bold text-slate-800 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-[14px] focus:ring-1 focus:ring-emerald-500 outline-none shadow-sm transition-shadow" />
                                                         </div>
                                                         <div className="flex-1 min-w-0">
                                                             <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 pl-1 truncate">Витрата/міс</label>
-                                                            <input type="number" value={item.consumption} onChange={(e) => handleChange(item.id, 'consumption', e.target.value)} className="w-full font-bold text-slate-800 bg-white border border-slate-200 rounded px-2.5 py-1.5 text-[14px] focus:ring-1 focus:ring-emerald-500 outline-none shadow-sm transition-shadow" />
+                                                            <input type="number" value={item.consumption} onChange={(e) => handleChange(item.id, 'consumption', e.target.value)} className="w-full font-bold text-slate-800 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-[14px] focus:ring-1 focus:ring-emerald-500 outline-none shadow-sm transition-shadow" />
                                                         </div>
                                                         <div className="w-[85px] shrink-0 flex flex-col justify-center items-center pt-2">
                                                             <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-1">Покриття:</span>
@@ -316,13 +417,10 @@
                                                             </span>
                                                         </div>
                                                         
-                                                        <div className="flex flex-col gap-2 shrink-0 ml-1 pt-4">
-                                                            <button onClick={() => handleAiAnalysis(item, m)} disabled={loadingAi[item.id]} className="bg-[#7c3aed] hover:bg-[#6d28d9] text-white px-3 py-1.5 rounded text-[10px] font-bold flex gap-1.5 items-center justify-center transition-all shadow-sm disabled:opacity-50">
+                                                        <div className="flex flex-col gap-2 shrink-0 ml-1 pt-4 no-print">
+                                                            <button onClick={() => handleAiAnalysis(item, m)} disabled={loadingAi[item.id]} className="bg-[#7c3aed] hover:bg-[#6d28d9] text-white px-3 py-1.5 rounded-lg text-[10px] font-bold flex gap-1.5 items-center justify-center transition-all shadow-sm disabled:opacity-50">
                                                                 {loadingAi[item.id] ? <IconLoader className="animate-spin w-3 h-3" /> : <IconSparkles className="w-3 h-3" />}
                                                                 AI Аналіз
-                                                            </button>
-                                                            <button onClick={() => handleRemoveItem(item.id)} className="bg-white hover:bg-red-50 text-slate-400 hover:text-red-500 border border-slate-200 px-3 py-1.5 rounded text-[10px] font-bold flex gap-1.5 items-center justify-center transition-all shadow-sm">
-                                                                <IconTrash className="w-3 h-3" /> Видалити
                                                             </button>
                                                         </div>
                                                     </div>
@@ -336,11 +434,28 @@
                                                 </div>
                                             </div>
 
-                                            {/* НИЖНЯ ЧАСТИНА: AI РЕЗУЛЬТАТ */}
-                                            {aiInsights[item.id] && (
-                                                <div className="p-4 bg-purple-50 text-sm text-purple-900 border-t border-purple-100 flex items-start gap-3">
-                                                    <IconInfo className="w-5 h-5 shrink-0 text-purple-600 mt-0.5" />
-                                                    <div className="whitespace-pre-wrap font-medium leading-relaxed text-[13px]">{aiInsights[item.id]}</div>
+                                            {/* НИЖНЯ ЧАСТИНА: AI РЕЗУЛЬТАТ З ДЖЕРЕЛАМИ */}
+                                            {insightText && (
+                                                <div className="p-5 bg-purple-50 text-sm text-purple-900 border-t border-purple-200 flex items-start gap-4">
+                                                    <IconInfo className="w-6 h-6 shrink-0 text-purple-600 mt-0.5" />
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="whitespace-pre-wrap font-medium leading-relaxed text-[13px]">{insightText}</div>
+                                                        
+                                                        {insightSources.length > 0 && (
+                                                            <div className="mt-4 pt-3 border-t border-purple-200/60 no-print">
+                                                                <span className="text-[10px] font-bold text-purple-700 uppercase tracking-widest block mb-2">Джерела (Актуальні посилання):</span>
+                                                                <div className="flex flex-wrap gap-2">
+                                                                    {insightSources.map((src, idx) => (
+                                                                        <a key={idx} href={src.uri} target="_blank" rel="noopener noreferrer" 
+                                                                           className="text-[11px] text-blue-700 hover:text-blue-900 underline bg-white/60 px-2.5 py-1.5 rounded-md border border-purple-200 shadow-sm truncate max-w-full inline-block transition-colors" 
+                                                                           title={src.title}>
+                                                                            🔗 {src.title}
+                                                                        </a>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             )}
                                         </div>
