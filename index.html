@@ -466,8 +466,13 @@
                 setExpandedAi(prev => ({ ...prev, [item.id]: true }));
                 setLoadingAi(prev => ({ ...prev, [item.id]: true }));
                 
-                // Canvas environment will inject the correct key here
+                // ВАЖЛИВО: Для роботи в Canvas ключ має бути порожнім ("").
+                // Для роботи на вашому комп'ютері вставте сюди свій ключ "AIzaSy..."
                 const apiKey = ""; 
+                
+                // Автоматичний вибір моделі: у Canvas працює лише 2.5-flash-preview, локально з вашим ключем - 1.5-flash
+                const modelName = apiKey === "" ? "gemini-2.5-flash-preview-09-2025" : "gemini-1.5-flash";
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
                 
                 const prompt = `Ти - досвідчений експерт з логістики (Supply Chain Manager).
                 Всі товари доставляються з Китаю. 
@@ -491,27 +496,17 @@
                 
                 Відповідь має бути професійною, структурованою, короткою. Мова: українська.`;
 
-                // Для середовища Canvas повертаємо лише підтримувану тут модель
-                const configs = [
-                    { model: 'gemini-2.5-flash-preview-09-2025', useSearch: true },
-                    { model: 'gemini-2.5-flash-preview-09-2025', useSearch: false }
-                ];
+                const payload = { 
+                    contents: [{ parts: [{ text: prompt }] }],
+                    tools: [{ google_search: {} }] 
+                };
 
+                const delays = [1000, 2000, 4000, 8000, 16000];
+                let lastError = "Невідома помилка";
                 let textResult = null;
                 let sources = [];
-                let lastError = "Невідома помилка";
 
-                for (const config of configs) {
-                    const url = `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent?key=${apiKey}`;
-                    
-                    const payload = {
-                        contents: [{ parts: [{ text: prompt }] }]
-                    };
-                    
-                    if (config.useSearch) {
-                        payload.tools = [{ google_search: {} }];
-                    }
-
+                for (let i = 0; i <= 5; i++) {
                     try {
                         const response = await fetch(url, { 
                             method: 'POST', 
@@ -520,8 +515,14 @@
                         });
                         
                         if (!response.ok) {
+                            // Якщо ключ не підтримує Google Пошук, він поверне 400. Вимикаємо пошук і пробуємо знову.
+                            if (response.status === 400 && payload.tools) {
+                                delete payload.tools;
+                                continue;
+                            }
                             const errData = await response.json().catch(() => ({}));
-                            throw new Error(errData?.error?.message || `HTTP ${response.status}`);
+                            const apiErrorMsg = errData?.error?.message || `HTTP ${response.status}`;
+                            throw new Error(`API Помилка: ${apiErrorMsg}`);
                         }
                         
                         const data = await response.json();
@@ -534,12 +535,22 @@
                                     .map(attr => ({ uri: attr.web.uri, title: attr.web.title || attr.web.uri }));
                                 sources = Array.from(new Map(sources.map(s => [s.uri, s])).values());
                             }
-                            break; 
+                        } else {
+                            throw new Error("API не повернув жодного тексту.");
                         }
+                        
+                        break; 
                     } catch (e) {
                         lastError = e.message;
-                        console.error(`Помилка API з моделлю ${config.model} (Пошук: ${config.useSearch}):`, e);
-                        if (lastError.includes("API_KEY_INVALID")) break; 
+                        console.error("AI Fetch Attempt Error:", e);
+                        
+                        if (lastError.includes("API_KEY_INVALID") || lastError.includes("not found")) {
+                            break;
+                        }
+                        
+                        if (i < 5) {
+                            await new Promise(res => setTimeout(res, delays[i]));
+                        }
                     }
                 }
 
@@ -549,7 +560,7 @@
                     setAiInsights(prev => ({ 
                         ...prev, 
                         [item.id]: { 
-                            text: `⚠️ AI недоступний.\nПричина: ${lastError}\n\nЩось пішло не так під час з'єднання з сервером Google. Спробуйте пізніше.`, 
+                            text: `⚠️ AI недоступний.\nПричина: ${lastError}\n\nСпробуйте пізніше або перевірте API-ключ.`, 
                             sources: [] 
                         } 
                     }));
