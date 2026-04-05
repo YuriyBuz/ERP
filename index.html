@@ -471,7 +471,7 @@
                 const apiKey = ""; 
                 
                 // Автоматичний вибір моделі: у Canvas працює лише 2.5-flash-preview, локально з вашим ключем - 1.5-flash
-                const modelName = apiKey === "" ? "gemini-2.5-flash-preview-09-2025" : "gemini-1.5-flash";
+                const modelName = apiKey === "AIzaSyCbppFUATz9p8A9zRKo72NASKU2ybPMV-Q" ? "gemini-2.5-flash-preview-09-2025" : "gemini-1.5-flash";
                 const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
                 
                 const prompt = `Ти - досвідчений експерт з логістики (Supply Chain Manager).
