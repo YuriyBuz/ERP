@@ -45,7 +45,7 @@
         
         .accordion-content { transition: max-height 0.3s ease-in-out, opacity 0.3s ease-in-out, padding 0.3s ease; overflow: hidden; }
         .accordion-collapsed { max-height: 0; opacity: 0; padding-top: 0; padding-bottom: 0; border: none; }
-        .accordion-expanded { max-height: 1200px; opacity: 1; }
+        .accordion-expanded { max-height: 5000px; opacity: 1; }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-800 font-sans pb-20">
@@ -529,9 +529,9 @@
 
                 Твоє завдання:
                 1. Оцінити ризик виникнення дефіциту з огляду на математику залишків.
-                2. Оцінити політичну, економічну, геополітичну, військову, транспортну, кліматичну ситуацію, які можуть вплинути на доставку і виконання замовлення виробником. 
-                3. Також оцінити вплив свят і вихідних днів. 
-                4. Оцінити ризики і дати свій прогноз по термінам доставки і воконання замовлення.
+                2. Оцінити політичну, економічну, геополітичну, військову, транспортну, кліматичну ситуацію, які можуть вплинути на доставку і виконання замовлення виробником. Які можут припадати на Lead Time.
+                3. Також оцінити вплив свят і вихідних днів. Які можут припадати на дні Lead Time.
+                4. Оцінити ризики і дати свій прогноз по термінам доставки і виконання замовлення враховуючи ризики.
                 5. Дати чіткі рекомендації: коли робити замовлення.
                 
                 Відповідь має бути професійною, структурованою, короткою. Мова: українська.`;
@@ -883,7 +883,7 @@
                                                                     </div>
                                                                 ) : insightText ? (
                                                                     <>
-                                                                        <div className="whitespace-pre-wrap font-medium leading-relaxed text-[13.5px] text-slate-800 bg-white p-5 rounded-lg border border-purple-100 shadow-sm">
+                                                                        <div className="whitespace-pre-wrap font-medium leading-relaxed text-[13.5px] text-slate-800 bg-white p-5 rounded-lg border border-purple-100 shadow-sm max-h-[600px] overflow-y-auto">
                                                                             {insightText}
                                                                         </div>
                                                                     </>
